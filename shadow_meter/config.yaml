@@ -10,9 +10,9 @@ arch:
   - amd64
 init: false
 homeassistant: "2025.10.0"
-# Web UI inside Home Assistant; only the ingress proxy may connect (enforced by the app)
+# Web UI inside Home Assistant on the default ingress port 8099; only the ingress proxy may connect
+# (enforced by the app)
 ingress: true
-ingress_port: 8099
 panel_icon: mdi:meter-electric-outline
 panel_title: Shadow Meter
 # Read-only use of the Core WebSocket API (entity list, recorder history, state changes)
