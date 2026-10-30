@@ -1,6 +1,6 @@
 # https://contributors.home-assistant.io/apps/reference/configuration/
 name: Shadow Meter
-version: "0.1.0"
+version: "0.2.0"
 slug: shadow_meter
 description: Detect unmetered devices (fridge, stove, lights, ...) from your whole-home power consumption
 url: "https://github.com/martpp/ha-shadow-meter"
@@ -26,10 +26,8 @@ backup_exclude:
 # until then the Supervisor builds the image on the device:
 # image: "ghcr.io/martpp/shadow-meter"
 options:
-  phases:
-    - phase: "A"
-      mains: "sensor.my_meter_phase_a_power"
-      submeters: []
+  # the meters are chosen in the Shadow Meter panel (Settings); this is only an optional alternative
+  phases: []
   context_domains:
     - light
   context_entities: []

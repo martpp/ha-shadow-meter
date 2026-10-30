@@ -17,7 +17,7 @@ from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 PHASE_RE = re.compile(r"^[A-Za-z0-9_]{1,16}$")
@@ -90,8 +90,34 @@ class MqttOptions(_Model):
     topic_prefix: Identifier = "shadow_meter"
 
 
-class Options(_Model):
+class Setup(_Model):
+    """The meter setup chosen in the web UI (takes precedence over `phases` in the options)."""
+
     phases: list[PhaseOptions] = Field(min_length=1, max_length=8)
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Setup:
+        names = [p.phase for p in self.phases]
+        if len(set(names)) != len(names):
+            raise ValueError("every phase needs its own name")
+        mains = [p.mains for p in self.phases]
+        subs = [s for p in self.phases for s in p.submeters]
+        if len(set(mains)) != len(mains):
+            raise ValueError("a meter can only be the mains of one phase")
+        if len(set(subs)) != len(subs):
+            raise ValueError("a sub-meter can only belong to one phase")
+        if set(mains) & set(subs):
+            raise ValueError("a mains meter cannot also be a sub-meter")
+        return self
+
+    def fingerprint(self) -> str:
+        """Identifies the meter setup; the analysis starts over when it changes."""
+        return "|".join(f"{p.phase}={p.mains}:{','.join(sorted(p.submeters))}" for p in self.phases)
+
+
+class Options(_Model):
+    # optional: the meters are normally chosen in the web UI (Settings); this is for standalone/YAML setups
+    phases: list[PhaseOptions] = Field(default_factory=list, max_length=8)
     context_domains: list[Literal["light", "switch", "fan", "input_boolean"]] = ["light"]
     context_entities: list[EntityId] = []
     exclude_entities: list[EntityId] = []

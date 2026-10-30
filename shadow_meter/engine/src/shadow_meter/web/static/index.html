@@ -17,11 +17,40 @@
         <p class="sub">Devices detected from your whole-home power consumption</p>
       </div>
     </div>
-    <div class="status" id="status" aria-live="polite">
-      <span class="dot" id="status-dot"></span>
-      <span id="status-text">Connecting…</span>
+    <div class="top-right">
+      <div class="status" id="status" aria-live="polite">
+        <span class="dot" id="status-dot"></span>
+        <span id="status-text">Connecting…</span>
+      </div>
+      <button class="settings-btn" id="open-settings" type="button">Settings</button>
     </div>
   </header>
+
+  <section class="setup-card" id="setup" hidden aria-labelledby="setup-title">
+    <h2 id="setup-title">Power meters</h2>
+    <p class="hint">
+      Choose the power sensor (in W) of each phase of your whole-home meter. Single-phase homes need one
+      entry. Devices that already have their own meter (smart plugs, ...) can be assigned to their phase:
+      their power is subtracted, so they are not "detected" again.
+    </p>
+    <p class="hint" id="setup-source" hidden></p>
+    <div id="setup-phases"></div>
+    <div class="row">
+      <button type="button" id="add-phase">Add phase</button>
+      <button type="button" id="use-suggestion" hidden>Use suggestion</button>
+    </div>
+    <h3>Devices with their own meter</h3>
+    <p class="hint">Optional. If you don't know the phase of a plug, leave it out - the results only get a bit noisier.</p>
+    <input type="search" id="sub-filter" placeholder="Filter sensors…" aria-label="Filter sensors">
+    <div class="sub-list" id="setup-subs"></div>
+    <p class="note">Saving restarts the analysis. If you change the meters of the phases, the analysis starts
+      over; devices you confirmed from lights are kept.</p>
+    <p class="error" id="setup-error" hidden role="alert"></p>
+    <div class="actions">
+      <button type="button" class="primary" id="setup-save">Save</button>
+      <button type="button" class="ghost" id="setup-cancel">Cancel</button>
+    </div>
+  </section>
 
   <section class="progress-card" id="progress" hidden>
     <div class="progress-head">

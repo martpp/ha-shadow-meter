@@ -15,9 +15,10 @@ from pydantic import SecretStr
 from shadow_meter import analyzer as analyzer_module
 from shadow_meter.__main__ import read_options
 from shadow_meter.analyzer import Analyzer
+from shadow_meter.engine import Engine
 from shadow_meter.models import Sample, StateChange
 from shadow_meter.mqtt.discovery import Publisher
-from shadow_meter.settings import Options, Runtime
+from shadow_meter.settings import Options, Runtime, Setup
 from shadow_meter.sources.homeassistant import HomeAssistantError
 from shadow_meter.store import Store
 from shadow_meter.web.server import build_app
@@ -37,15 +38,34 @@ OPTIONS = Options.model_validate(
 
 
 class FakeHA:
+    connected = True
+
     def __init__(self, house: House) -> None:
         self.house = house
+
+    async def connect(self) -> None:
+        pass
+
+    async def close(self) -> None:
+        pass
 
     async def get_config(self) -> dict[str, Any]:
         return {"time_zone": "Europe/Vienna"}
 
     async def get_states(self) -> list[dict[str, Any]]:
-        names = {"light.hallway": "Hallway light", "sensor.phase_a": "Phase A"}
-        return [{"entity_id": e, "attributes": {"friendly_name": n}} for e, n in names.items()]
+        def st(eid: str, name: str, state: str, unit: str | None = None) -> dict[str, Any]:
+            attrs = {"friendly_name": name} | ({"unit_of_measurement": unit} if unit else {})
+            return {"entity_id": eid, "state": state, "attributes": attrs}
+
+        return [
+            st("light.hallway", "Hallway light", "off"),
+            st("sensor.phase_a", "Phase A", "152.3", "W"),
+            st("sensor.phase_b", "Phase B", "80.1", "W"),
+            st("sensor.phase_c", "Phase C", "61.0", "W"),
+            st("sensor.dishwasher", "Dishwasher power", "0.5", "W"),
+            st("sensor.heat_pump", "Heat pump", "1.2", "kW"),  # not in W: not offered
+            st("sensor.temperature", "Temperature", "21.5", "°C"),
+        ]
 
     async def power(self, entity_ids: list[str], start: float, end: float) -> dict[str, list[Sample]]:
         out = {}
@@ -149,8 +169,16 @@ def runtime(mode: str, host: str = "127.0.0.1", token: str = "") -> Runtime:
     )
 
 
-async def client_for(a: Analyzer, rt: Runtime) -> TestClient[Any, Any]:
-    c = TestClient(TestServer(build_app(a, rt)))
+def engine_for(a: Analyzer) -> Engine:
+    """An engine that already runs the given analyzer (set up from the options)."""
+    e = Engine(OPTIONS, a.store, a.ha)
+    e.analyzer, e.setup, e.source = a, Setup(phases=OPTIONS.phases), "options"
+    return e
+
+
+async def client_for(a: Analyzer | Engine, rt: Runtime) -> TestClient[Any, Any]:
+    engine = a if isinstance(a, Engine) else engine_for(a)
+    c = TestClient(TestServer(build_app(engine, rt)))
     await c.start_server()
     return c
 

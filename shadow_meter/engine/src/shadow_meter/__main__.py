@@ -7,18 +7,19 @@ import contextlib
 import logging
 import os
 import signal
+from typing import Any
 
 import aiohttp
 from aiohttp import web
 from pydantic import ValidationError
 
 from . import __version__
-from .analyzer import Analyzer
+from .engine import Engine
 from .mqtt.discovery import Publisher
 from .mqtt.link import MqttLink
 from .settings import Options, Runtime, load_options, load_runtime
-from .sources.homeassistant import HomeAssistant, HomeAssistantError
-from .sources.influx import Influx, InfluxError
+from .sources.homeassistant import HomeAssistant
+from .sources.influx import Influx
 from .store import Store
 from .web.server import build_app
 
@@ -37,32 +38,6 @@ def _mqtt(options: Options) -> MqttLink | None:
         port = int(os.environ.get("MQTT_PORT", "1883"))
         user, pw = os.environ.get("MQTT_USER", ""), os.environ.get("MQTT_PASSWORD", "")
     return MqttLink(host, port, user, pw, f"{o.topic_prefix}/status")
-
-
-async def _analysis(analyzer: Analyzer, ha: HomeAssistant) -> None:
-    delay = 5.0
-    while True:
-        try:
-            await ha.connect()
-            await analyzer.setup()
-            await analyzer.backfill()
-            delay = 5.0
-            await analyzer.live()
-        except asyncio.CancelledError:
-            raise
-        except (
-            HomeAssistantError,
-            InfluxError,
-            aiohttp.ClientError,
-            OSError,
-            TimeoutError,
-            ExceptionGroup,
-        ) as err:
-            _LOG.warning("analysis interrupted: %s - retrying in %.0f s", err, delay)
-            analyzer.set_status(state="error", message=f"Connection problem, retrying: {type(err).__name__}")
-        await ha.close()
-        await asyncio.sleep(delay)
-        delay = min(delay * 2, 300.0)
 
 
 async def run(options: Options, runtime: Runtime) -> None:
@@ -91,17 +66,30 @@ async def run(options: Options, runtime: Runtime) -> None:
         publisher = (
             Publisher(link, options.mqtt.discovery_prefix, options.mqtt.topic_prefix) if link else None
         )
-        analyzer = Analyzer(
+
+        async def list_states() -> list[dict[str, Any]]:
+            """Entity states for the setup page; works with or without a running analysis."""
+            if ha.connected:
+                return await ha.get_states()
+            temp = HomeAssistant(session, runtime.ha_url, runtime.ha_token.get_secret_value())
+            try:
+                await temp.connect()
+                return await temp.get_states()
+            finally:
+                await temp.close()
+
+        engine = Engine(
             options,
             store,
             ha,
             influx=influx,
             publisher=publisher,
             mqtt_connected=(lambda: link.connected) if link else None,
+            list_states=list_states,
         )
         if not link:
             _LOG.warning("no MQTT broker configured: devices cannot be added to Home Assistant")
-        runner = web.AppRunner(build_app(analyzer, runtime), access_log=None)  # no URLs (tokens) in logs
+        runner = web.AppRunner(build_app(engine, runtime), access_log=None)  # no URLs (tokens) in logs
         await runner.setup()
         await web.TCPSite(runner, runtime.listen_host, runtime.listen_port).start()
         _LOG.info(
@@ -111,17 +99,16 @@ async def run(options: Options, runtime: Runtime) -> None:
             runtime.listen_host,
             runtime.listen_port,
         )
-        tasks = [asyncio.create_task(_analysis(analyzer, ha))]
-        if link:
-            tasks.append(asyncio.create_task(link.run(analyzer.republish)))
+        await engine.start()
+        if not engine.setup:
+            _LOG.info("no meters set up yet: open the Shadow Meter panel and choose them in Settings")
+        tasks = [asyncio.create_task(link.run(engine.republish))] if link else []
         await stop.wait()
         _LOG.info("stopping")
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        with contextlib.suppress(Exception):
-            await store.set_json("detector", analyzer.detector.to_dict())
-        await ha.close()
+        await engine.stop()
         await runner.cleanup()
     store.close()
 

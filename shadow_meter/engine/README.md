@@ -21,6 +21,8 @@ src/shadow_meter/
 ├── __main__.py      entry point: wires everything together, readable option errors
 ├── settings.py      validated options (app options.json / standalone) and runtime
 ├── models.py        small value types: Sample, Step, StateChange, Cycle
+├── engine.py        lifecycle: start the analysis once meters are set up, restart it on changes
+├── setup.py         meter setup helpers: power sensors of Home Assistant, phase suggestion
 ├── analyzer.py      backfill -> catch-up -> live; events for the UI; energy of active devices
 ├── store.py         SQLite on a single worker thread
 ├── detection/       the device detection

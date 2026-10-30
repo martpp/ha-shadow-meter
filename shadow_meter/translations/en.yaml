@@ -1,10 +1,10 @@
 configuration:
   phases:
-    name: Phases
+    name: Phases (optional)
     description: >-
-      One entry per phase of your whole-home meter. "mains" is the power sensor (W) of that phase,
-      "submeters" are power sensors of devices on that phase that already have their own meter
-      (they are subtracted, so they are not detected again). Single-phase homes have one entry.
+      Leave empty and choose the meters in the Shadow Meter panel (Settings) instead - it lists your
+      power sensors. Only needed for setups without the panel: one entry per phase with "phase" (name),
+      "mains" (power sensor in W) and "submeters" (devices on that phase with their own meter).
   context_domains:
     name: Context domains
     description: >-

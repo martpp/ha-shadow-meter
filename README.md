@@ -32,8 +32,9 @@ Confirm a device and it appears in Home Assistant with power and energy, ready f
 
 1. Add this repository: Settings → Apps → App store → ⋮ → Repositories →
    `https://github.com/martpp/ha-shadow-meter`
-2. Install **Shadow Meter**, set your power sensors in the options, start it.
-3. Open **Shadow Meter** in the sidebar and watch it analyse your history.
+2. Install and start **Shadow Meter**.
+3. Open **Shadow Meter** in the sidebar, choose your power meters in Settings (common 3-phase meters are
+   suggested automatically) and watch it analyse your history.
 
 See [the app documentation](shadow_meter/DOCS.md) for all options.
 

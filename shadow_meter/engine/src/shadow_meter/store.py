@@ -91,6 +91,10 @@ class Store:
     async def set_json(self, key: str, value: Any) -> None:
         await self._run("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, json.dumps(value)))
 
+    async def delete_json(self, *keys: str) -> None:
+        for key in keys:
+            await self._run("DELETE FROM meta WHERE key=?", (key,))
+
     # user decisions -------------------------------------------------------------------------------
     async def devices(self) -> dict[str, dict[str, Any]]:
         rows = await self._run("SELECT id, status, name, type FROM devices")
@@ -111,6 +115,9 @@ class Store:
         )
         return new
 
+    async def delete_device(self, device_id: str) -> None:
+        await self._run("DELETE FROM devices WHERE id=?", (device_id,))
+
     # confidence history ---------------------------------------------------------------------------
     async def add_confidence(self, points: list[tuple[str, float, float]]) -> None:
         if not points:
@@ -125,6 +132,9 @@ class Store:
             )
 
         await self._call(work)
+
+    async def clear_confidence(self) -> None:
+        await self._run("DELETE FROM confidence")
 
     async def confidence_history(self) -> dict[str, list[tuple[float, float]]]:
         rows = await self._run("SELECT id, ts, value FROM confidence ORDER BY ts")

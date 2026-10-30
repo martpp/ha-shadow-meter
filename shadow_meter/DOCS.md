@@ -24,7 +24,14 @@ and energy (kWh, for the Energy dashboard).
 
 1. Add this repository to the app store (Settings → Apps → App store → ⋮ → Repositories).
 2. Install **Shadow Meter**.
-3. Configure the options (below), start the app and open the **Shadow Meter** panel in the sidebar.
+3. Start the app and open the **Shadow Meter** panel in the sidebar.
+4. Choose your meters in **Settings** (opens by itself on the first start): the power sensor of each
+   phase, and optionally the phase of devices that already have their own meter. Shadow Meter
+   suggests the phases of common 3-phase meters (Shelly 3EM, Shelly Pro 3EM, meter readers with L1-L3).
+
+The meters are chosen in the panel because the app configuration page of Home Assistant cannot show an
+entity picker. Changing the meters later restarts the analysis from the beginning; devices you
+confirmed from lights are kept.
 
 To add detected devices to Home Assistant you need an MQTT broker (e.g. the Mosquitto app) and the
 MQTT integration. If the broker runs as an app, Shadow Meter finds it automatically.
@@ -32,14 +39,7 @@ MQTT integration. If the broker runs as an app, Shadow Meter finds it automatica
 ## Options
 
 ```yaml
-phases:
-  - phase: "A"
-    mains: sensor.shelly3em_channel_a_power
-    submeters:
-      - sensor.dishwasher_power
-  - phase: "B"
-    mains: sensor.shelly3em_channel_b_power
-    submeters: []
+phases: []          # normally empty: the meters are chosen in the panel (Settings)
 context_domains:
   - light
 context_entities: []
@@ -55,7 +55,7 @@ log_level: info
 
 | Option | Description |
 |---|---|
-| `phases` | One entry per phase. `mains`: the power sensor (W) of the phase. `submeters`: power sensors of devices on that phase that already have their own meter - they are subtracted, so they are not "detected" again. If you don't know the phase of a plug, start without it; the result only gets a bit noisier. |
+| `phases` | Optional, for setups without the panel (e.g. the standalone container). One entry per phase: `phase` (name), `mains` (power sensor of the phase, W), `submeters` (power sensors of devices on that phase with their own meter). A setup saved in the panel takes precedence. |
 | `context_domains` | Entities of these domains are matched with power steps (default: `light`). Switches of smart plugs are usually better left out because their power is metered anyway. |
 | `context_entities` | Further entities to match, e.g. a switch that powers an unmetered device. |
 | `exclude_entities` | Entities never to match, e.g. status LEDs of devices. |

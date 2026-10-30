@@ -4,6 +4,19 @@ All notable changes to this app are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this app uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] - 2026-10-30
+
+### Added
+- Choose the meters in the panel (Settings): lists the power sensors of Home Assistant with their
+  current value, suggests the phases of common 3-phase meters, assigns devices with their own meter to
+  a phase. Opens by itself when nothing is set up yet.
+
+### Changed
+- The `phases` option is now optional (and empty by default). A setup saved in the panel takes
+  precedence; an existing `phases` option keeps working.
+- Changing the meters restarts the analysis from the beginning; pattern devices that were added to
+  Home Assistant are removed, devices confirmed from lights are kept.
+
 ## [0.1.0] - 2026-10-30
 
 ### Added

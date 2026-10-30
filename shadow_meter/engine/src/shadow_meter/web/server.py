@@ -7,6 +7,7 @@ Security model
   server listens on localhost only. The token is compared in constant time.
 - Every response carries strict security headers; the UI loads no external resources (CSP 'self').
 - Request bodies are small, JSON only, and validated with pydantic; unknown fields are rejected.
+- The meter setup can only use power sensors that exist in Home Assistant (checked on save).
 """
 
 from __future__ import annotations
@@ -29,11 +30,13 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from .. import __version__
 from ..analyzer import Analyzer, PublishUnavailable
 from ..detection.classify import DEVICE_TYPES
-from ..settings import Runtime
+from ..engine import Engine
+from ..settings import Runtime, Setup
+from ..setup import power_sensors, suggest_phases
 
 _LOG = logging.getLogger(__name__)
 INGRESS_PROXY = ipaddress.ip_address("172.30.32.2")
-ANALYZER = web.AppKey("analyzer", Analyzer)
+ENGINE = web.AppKey("engine", Engine)
 MAX_BODY = 16 * 1024
 
 SECURITY_HEADERS = {
@@ -91,9 +94,15 @@ def access_middleware(runtime: Runtime) -> Middleware:
     return middleware
 
 
-def build_app(analyzer: Analyzer, runtime: Runtime) -> web.Application:
+def _analyzer(engine: Engine) -> Analyzer:
+    if engine.analyzer is None:
+        raise web.HTTPConflict(text="Choose your power meters in Settings first")
+    return engine.analyzer
+
+
+def build_app(engine: Engine, runtime: Runtime) -> web.Application:
     app = web.Application(middlewares=[access_middleware(runtime)], client_max_size=MAX_BODY)
-    app[ANALYZER] = analyzer
+    app[ENGINE] = engine
     static = resources.files("shadow_meter.web") / "static"
 
     async def index(_: web.Request) -> web.Response:
@@ -111,17 +120,18 @@ def build_app(analyzer: Analyzer, runtime: Runtime) -> web.Application:
     async def status(_: web.Request) -> web.Response:
         return web.json_response(
             {
-                **analyzer.status,
+                **engine.status(),
                 "version": __version__,
                 "types": DEVICE_TYPES,
-                "phases": [p.phase for p in analyzer.phase_configs],
-                "mqtt": analyzer.mqtt_state(),
+                "phases": [p.phase for p in engine.setup.phases] if engine.setup else [],
+                "setup_source": engine.source,
+                "mqtt": engine.mqtt_state(),
             },
             dumps=_dumps,
         )
 
     async def candidates(_: web.Request) -> web.Response:
-        return web.json_response(analyzer.candidates(), dumps=_dumps)
+        return web.json_response(engine.analyzer.candidates() if engine.analyzer else [], dumps=_dumps)
 
     async def update(request: web.Request) -> web.Response:
         if request.content_type != "application/json":
@@ -133,7 +143,9 @@ def build_app(analyzer: Analyzer, runtime: Runtime) -> web.Application:
         if body.type is not None and body.type and body.type not in DEVICE_TYPES:
             raise web.HTTPBadRequest(text="unknown device type")
         try:
-            result = await analyzer.update_device(request.match_info["id"], body.status, body.name, body.type)
+            result = await _analyzer(engine).update_device(
+                request.match_info["id"], body.status, body.name, body.type
+            )
         except KeyError as err:
             raise web.HTTPNotFound() from err
         except PublishUnavailable as err:
@@ -147,15 +159,61 @@ def build_app(analyzer: Analyzer, runtime: Runtime) -> web.Application:
     app.router.add_get("/api/status", status)
     app.router.add_get("/api/candidates", candidates)
     app.router.add_patch("/api/candidates/{id}", update)
+    app.router.add_get("/api/setup", get_setup)
+    app.router.add_put("/api/setup", put_setup)
     app.router.add_get("/api/events", events)
     return app
 
 
+async def get_setup(request: web.Request) -> web.Response:
+    """Power sensors of Home Assistant, the current setup and a suggestion for the phases."""
+    engine = request.app[ENGINE]
+    try:
+        sensors = power_sensors(await engine.states())
+    except Exception as err:  # Home Assistant unreachable: tell the UI instead of failing silently
+        _LOG.warning("could not read the entities of Home Assistant: %s", err)
+        raise web.HTTPBadGateway(text="Home Assistant is not reachable, try again in a moment") from err
+    current = engine.setup.model_dump(mode="json")["phases"] if engine.setup else []
+    body = {
+        "source": engine.source,
+        "phases": current,
+        "sensors": sensors,
+        "suggestion": suggest_phases(sensors),
+    }
+    return web.json_response(body, dumps=_dumps)
+
+
+async def put_setup(request: web.Request) -> web.Response:
+    """Save the meter setup chosen in the UI and restart the analysis."""
+    engine = request.app[ENGINE]
+    if request.content_type != "application/json":
+        raise web.HTTPUnsupportedMediaType()
+    try:
+        setup = Setup.model_validate(await request.json())
+    except ValidationError as err:
+        reasons = "; ".join(e["msg"].removeprefix("Value error, ") for e in err.errors())
+        raise web.HTTPBadRequest(text=reasons) from err
+    except json.JSONDecodeError as err:
+        raise web.HTTPBadRequest(text="invalid request") from err
+    known = {s["entity_id"] for s in power_sensors(await engine.states())}
+    used = {p.mains for p in setup.phases} | {s for p in setup.phases for s in p.submeters}
+    unknown = sorted(used - known)
+    if unknown:
+        raise web.HTTPBadRequest(text=f"not a power sensor in Home Assistant: {', '.join(unknown)}")
+    reset = await engine.reconfigure(setup)
+    return web.json_response({"ok": True, "reset": reset})
+
+
 async def events(request: web.Request) -> web.WebSocketResponse:
     """Push status and candidate updates to the UI as long as the socket is open."""
-    analyzer = request.app[ANALYZER]
+    engine = request.app[ENGINE]
     ws = web.WebSocketResponse(heartbeat=30)
     await ws.prepare(request)
+    analyzer = engine.analyzer
+    if analyzer is None:  # nothing to follow until the meters are set up; the UI reloads after saving
+        await ws.send_str(_dumps({"kind": "status", "data": engine.status()}))
+        await _drain(ws)
+        return ws
     queue = analyzer.subscribe()
     try:
         await ws.send_str(_dumps({"kind": "status", "data": analyzer.status}))

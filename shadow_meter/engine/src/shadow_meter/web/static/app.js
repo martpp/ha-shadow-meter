@@ -229,6 +229,148 @@ function updateCandidates(list) {
   renderCards();
 }
 
+// ---- settings: choose the meters -----------------------------------------------------------------
+const setup = { sensors: [], phases: [], suggestion: [] };
+
+function sensorLabel(s) {
+  const value = s.value == null ? "–" : `${fmtW(s.value)} W`;
+  return `${s.name} (${value})`;
+}
+
+function renderPhases() {
+  const box = $("setup-phases");
+  box.replaceChildren();
+  setup.phases.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.className = "phase-row";
+    const name = document.createElement("input");
+    name.value = p.phase;
+    name.maxLength = 16;
+    name.setAttribute("aria-label", "Phase name");
+    name.addEventListener("change", () => {
+      p.phase = name.value.trim();
+      renderSubs();
+    });
+    const sel = document.createElement("select");
+    sel.setAttribute("aria-label", `Meter of phase ${p.phase}`);
+    sel.add(new Option("— choose the power sensor of this phase —", ""));
+    for (const s of setup.sensors) sel.add(new Option(`${sensorLabel(s)} · ${s.entity_id}`, s.entity_id));
+    sel.value = p.mains || "";
+    sel.addEventListener("change", () => {
+      p.mains = sel.value;
+      setup.phases.forEach((q) => (q.submeters = q.submeters.filter((e) => e !== p.mains)));
+      renderSubs();
+    });
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remove";
+    remove.disabled = setup.phases.length === 1;
+    remove.addEventListener("click", () => {
+      setup.phases.splice(i, 1);
+      renderPhases();
+      renderSubs();
+    });
+    row.append(name, sel, remove);
+    box.append(row);
+  });
+  $("add-phase").disabled = setup.phases.length >= 8;
+}
+
+function renderSubs() {
+  const box = $("setup-subs");
+  const filter = $("sub-filter").value.trim().toLowerCase();
+  const mains = new Set(setup.phases.map((p) => p.mains));
+  box.replaceChildren();
+  for (const s of setup.sensors) {
+    if (mains.has(s.entity_id)) continue;
+    if (filter && !`${s.name} ${s.entity_id}`.toLowerCase().includes(filter)) continue;
+    const row = document.createElement("div");
+    row.className = "sub-row";
+    const label = document.createElement("div");
+    label.textContent = sensorLabel(s);
+    const id = document.createElement("small");
+    id.textContent = s.entity_id;
+    label.append(id);
+    const sel = document.createElement("select");
+    sel.setAttribute("aria-label", `Phase of ${s.name}`);
+    sel.add(new Option("not used", ""));
+    for (const p of setup.phases) if (p.phase) sel.add(new Option(`Phase ${p.phase}`, p.phase));
+    const owner = setup.phases.find((p) => p.submeters.includes(s.entity_id));
+    sel.value = owner ? owner.phase : "";
+    sel.addEventListener("change", () => {
+      setup.phases.forEach((p) => (p.submeters = p.submeters.filter((e) => e !== s.entity_id)));
+      const target = setup.phases.find((p) => p.phase === sel.value);
+      if (target) target.submeters.push(s.entity_id);
+    });
+    row.append(label, sel);
+    box.append(row);
+  }
+  if (!box.children.length) {
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent = "No other power sensors.";
+    box.append(empty);
+  }
+}
+
+function showSetupError(text) {
+  $("setup-error").textContent = text;
+  $("setup-error").hidden = !text;
+}
+
+async function openSettings() {
+  $("setup").hidden = false;
+  showSetupError("");
+  try {
+    const data = await api("api/setup");
+    setup.sensors = data.sensors;
+    setup.suggestion = data.suggestion;
+    setup.phases = data.phases.length
+      ? data.phases.map((p) => ({ ...p, submeters: [...p.submeters] }))
+      : data.suggestion.length
+        ? data.suggestion.map((p) => ({ ...p, submeters: [] }))
+        : [{ phase: "A", mains: "", submeters: [] }];
+    const source = $("setup-source");
+    source.hidden = data.source !== "options";
+    source.textContent = "The meters are currently set in the app options. Saving here takes over.";
+    $("use-suggestion").hidden = !data.suggestion.length;
+    $("use-suggestion").textContent = `Use suggested meter (${data.suggestion.length} phases)`;
+    $("use-suggestion").title = data.suggestion.map((p) => `${p.phase}: ${p.mains}`).join("\n");
+    renderPhases();
+    renderSubs();
+    $("setup").scrollIntoView({ behavior: "smooth", block: "start" });
+  } catch (err) {
+    showSetupError(`Could not load the sensors: ${err.message}`);
+  }
+}
+
+async function saveSettings() {
+  const phases = setup.phases.map((p) => ({ phase: p.phase.trim(), mains: p.mains, submeters: p.submeters }));
+  if (phases.some((p) => !p.mains)) return showSetupError("Choose a power sensor for every phase.");
+  $("setup-save").disabled = true;
+  try {
+    await api("api/setup", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phases }),
+    });
+    showSetupError("");
+    $("setup-save").textContent = "Saved – restarting the analysis…";
+    setTimeout(() => location.reload(), 800);
+  } catch (err) {
+    showSetupError(err.message.replace(/^\d+ /, ""));
+    $("setup-save").disabled = false;
+  }
+}
+
+function setSetupMode(needsSetup) {
+  for (const id of ["progress", "feed"]) if (needsSetup) $(id).hidden = true;
+  document.querySelector(".filters").hidden = needsSetup;
+  $("cards").hidden = needsSetup;
+  if (needsSetup) $("empty").hidden = true;
+  $("setup-cancel").hidden = needsSetup;
+}
+
 // ---- live updates --------------------------------------------------------------------------------
 let retry = 1000;
 function connect() {
@@ -253,6 +395,22 @@ function connect() {
 }
 
 async function init() {
+  $("open-settings").addEventListener("click", openSettings);
+  $("setup-cancel").addEventListener("click", () => ($("setup").hidden = true));
+  $("setup-save").addEventListener("click", saveSettings);
+  $("add-phase").addEventListener("click", () => {
+    const used = new Set(setup.phases.map((p) => p.phase));
+    const name = ["A", "B", "C", "D", "E", "F", "G", "H"].find((n) => !used.has(n)) || "";
+    setup.phases.push({ phase: name, mains: "", submeters: [] });
+    renderPhases();
+    renderSubs();
+  });
+  $("use-suggestion").addEventListener("click", () => {
+    setup.phases = setup.suggestion.map((p) => ({ ...p, submeters: [] }));
+    renderPhases();
+    renderSubs();
+  });
+  $("sub-filter").addEventListener("input", renderSubs);
   document.querySelectorAll(".tabs button").forEach((b) =>
     b.addEventListener("click", () => {
       document.querySelectorAll(".tabs button").forEach((x) => x.setAttribute("aria-selected", x === b));
@@ -268,6 +426,11 @@ async function init() {
     const s = await api("api/status");
     state.types = s.types;
     renderStatus(s);
+    setSetupMode(s.state === "setup");
+    if (s.state === "setup") {
+      await openSettings();
+      return; // nothing to follow until the meters are chosen
+    }
     updateCandidates(await api("api/candidates"));
   } catch (err) {
     $("status-text").textContent = `Error: ${err.message}`;

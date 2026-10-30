@@ -15,7 +15,7 @@ import contextlib
 import logging
 import math
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, tzinfo
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -24,7 +24,7 @@ from .detection.classify import DEVICE_TYPES
 from .detection.pipeline import Detector, PhaseConfig
 from .models import Sample, StateChange
 from .mqtt.discovery import Publisher
-from .settings import Options
+from .settings import Options, PhaseOptions
 from .sources import HistorySource, parse_on, parse_power
 from .sources.homeassistant import HomeAssistant, HomeAssistantError
 from .store import Status, Store
@@ -51,6 +51,7 @@ class Analyzer:
         store: Store,
         ha: HomeAssistant,
         *,
+        phases: Sequence[PhaseOptions] | None = None,
         influx: HistorySource | None = None,
         publisher: Publisher | None = None,
         mqtt_connected: Callable[[], bool] | None = None,
@@ -64,7 +65,8 @@ class Analyzer:
         self._mqtt_connected = mqtt_connected
         self.clock = clock
         self.tz: tzinfo = UTC
-        self.phase_configs = [PhaseConfig(p.phase, p.mains, tuple(p.submeters)) for p in options.phases]
+        chosen = options.phases if phases is None else phases
+        self.phase_configs = [PhaseConfig(p.phase, p.mains, tuple(p.submeters)) for p in chosen]
         self.detector = Detector(self.phase_configs, min_step_w=options.min_step_w)
         self.context: list[str] = []
         self.names: dict[str, str] = {}
