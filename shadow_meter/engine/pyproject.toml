@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shadow-meter"
+version = "0.1.0"
+description = "Shadow Meter for Home Assistant: detect unmetered devices from the whole-home power consumption"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.12"
+authors = [{ name = "Shadow Meter contributors" }]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Programming Language :: Python :: 3",
+  "Topic :: Home Automation",
+]
+# Lower bounds here; exact versions for the container image are pinned in requirements.txt
+dependencies = [
+  "aiohttp>=3.10",
+  "aiomqtt>=2.3",
+  "numpy>=2.0",
+  "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy",
+  "pytest",
+  "pytest-aiohttp",
+  "pytest-asyncio",
+  "ruff",
+]
+
+[project.scripts]
+shadow-meter = "shadow_meter.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+shadow_meter = ["web/static/*"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "SIM", "RUF", "PL"]
+ignore = [
+  "PLR0913",  # many arguments are fine for small dataclass-like helpers
+  "PLR2004",  # magic values: thresholds are documented constants or tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "PLR2004", "S311"]
+# InfluxQL has no bind parameters; every identifier is validated by ident() before it is used
+"src/shadow_meter/sources/influx.py" = ["S608"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+mypy_path = "src"
+packages = ["shadow_meter"]
+
+[[tool.mypy.overrides]]
+module = ["aiomqtt.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

@@ -1,0 +1,23 @@
+# systemd unit for the Shadow Meter live service. Adapt paths/user, then:
+#   sudo cp live/shadow-meter.service /etc/systemd/system/ && sudo systemctl enable --now shadow-meter
+[Unit]
+Description=Shadow Meter for Home Assistant: live estimation of fridge/stove via MQTT
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=shadowmeter
+Group=shadowmeter
+Environment=HOME=/home/shadowmeter
+Environment=SHADOW_METER_CONFIG=/opt/ha-shadow-meter/config.yaml
+WorkingDirectory=/opt/ha-shadow-meter/live
+ExecStart=/opt/ha-shadow-meter/.venv/bin/python -u /opt/ha-shadow-meter/live/shadow_meter.py
+Restart=always
+RestartSec=30
+# keep it small; on a host that also runs InfluxDB the database must never starve
+MemoryMax=400M
+MemorySwapMax=0
+CPUQuota=50%
+
+[Install]
+WantedBy=multi-user.target

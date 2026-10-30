@@ -1,0 +1,24 @@
+# private configuration and credentials (the app's shadow_meter/config.yaml IS part of the repo)
+/research/config.yaml
+/config/
+*.env
+.env
+.env.*
+# data and results (contain household data)
+data/
+out/
+*.parquet
+*.npz
+*.sqlite
+*.db
+research/live/state.json
+# tooling
+__pycache__/
+*.log
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+.claude/

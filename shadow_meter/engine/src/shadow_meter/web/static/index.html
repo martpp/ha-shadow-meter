@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shadow Meter</title>
+  <link rel="icon" href="static/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="static/style.css">
+  <script src="static/app.js" defer></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="static/icon.svg" alt="" width="32" height="32">
+      <div>
+        <h1>Shadow Meter</h1>
+        <p class="sub">Devices detected from your whole-home power consumption</p>
+      </div>
+    </div>
+    <div class="status" id="status" aria-live="polite">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Connecting…</span>
+    </div>
+  </header>
+
+  <section class="progress-card" id="progress" hidden>
+    <div class="progress-head">
+      <strong id="progress-title">Analysing history</strong>
+      <span id="progress-detail"></span>
+    </div>
+    <div class="bar"><div class="bar-fill" id="progress-fill"></div></div>
+    <div class="counters">
+      <span><b id="count-steps">0</b> switching events</span>
+      <span><b id="count-cycles">0</b> on/off cycles</span>
+      <span><b id="count-candidates">0</b> device candidates</span>
+    </div>
+  </section>
+
+  <section class="feed" id="feed" aria-live="polite" hidden>
+    <h2>Activity</h2>
+    <ul id="feed-list"></ul>
+  </section>
+
+  <nav class="filters" aria-label="Filter devices">
+    <div class="tabs" role="tablist">
+      <button role="tab" data-filter="all" aria-selected="true">All</button>
+      <button role="tab" data-filter="new">New</button>
+      <button role="tab" data-filter="confirmed">Confirmed</button>
+      <button role="tab" data-filter="active">In Home Assistant</button>
+      <button role="tab" data-filter="rejected">Rejected</button>
+    </div>
+    <label class="toggle"><input type="checkbox" id="show-uncertain"> show uncertain</label>
+  </nav>
+
+  <main id="cards" class="cards"></main>
+  <p class="empty" id="empty" hidden>No device candidates yet. They appear while the history is analysed.</p>
+
+  <template id="card-template">
+    <article class="card">
+      <div class="card-head">
+        <span class="badge type"></span>
+        <span class="badge phase"></span>
+        <span class="badge running" hidden>running</span>
+        <span class="state"></span>
+      </div>
+      <input class="name" aria-label="Device name" maxlength="80">
+      <div class="power"><span class="watts"></span><span class="unit">W</span><span class="kwh"></span></div>
+      <div class="confidence">
+        <div class="conf-head"><span>Confidence</span><span class="conf-value"></span><span class="trend"></span></div>
+        <div class="bar"><div class="bar-fill"></div></div>
+        <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><polyline></polyline></svg>
+      </div>
+      <dl class="facts"></dl>
+      <p class="note" hidden></p>
+      <div class="edit">
+        <label>Type <select class="type-select"></select></label>
+      </div>
+      <div class="actions">
+        <button class="confirm">Confirm</button>
+        <button class="activate primary">Add to Home Assistant</button>
+        <button class="reject ghost">Reject</button>
+      </div>
+    </article>
+  </template>
+</body>
+</html>

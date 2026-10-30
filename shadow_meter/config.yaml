@@ -1,0 +1,88 @@
+# https://contributors.home-assistant.io/apps/reference/configuration/
+name: Shadow Meter
+version: "0.1.0"
+slug: shadow_meter
+description: Detect unmetered devices (fridge, stove, lights, ...) from your whole-home power consumption
+url: "https://github.com/martpp/ha-shadow-meter"
+stage: experimental
+arch:
+  - aarch64
+  - amd64
+init: false
+homeassistant: "2025.10.0"
+# Web UI inside Home Assistant; only the ingress proxy may connect (enforced by the app)
+ingress: true
+ingress_port: 8099
+panel_icon: mdi:meter-electric-outline
+panel_title: Shadow Meter
+# Read-only use of the Core WebSocket API (entity list, recorder history, state changes)
+homeassistant_api: true
+# MQTT credentials are taken from the MQTT service (e.g. the Mosquitto app) if no broker is configured
+services:
+  - mqtt:want
+backup_exclude:
+  - "*.log"
+# Enable once the "Publish app image" workflow has published this version (and the package is public);
+# until then the Supervisor builds the image on the device:
+# image: "ghcr.io/martpp/shadow-meter"
+options:
+  phases:
+    - phase: "A"
+      mains: "sensor.my_meter_phase_a_power"
+      submeters: []
+  context_domains:
+    - light
+  context_entities: []
+  exclude_entities: []
+  history_days: 14
+  min_step_w: 12
+  influx:
+    enabled: false
+    url: "http://a0d7b954-influxdb:8086"
+    database: homeassistant
+    username: ""
+    password: ""
+    power_measurement: W
+    legacy_state_measurement: state
+    history_start: ""
+    verify_ssl: true
+  mqtt:
+    host: ""
+    port: 1883
+    username: ""
+    password: ""
+    discovery_prefix: homeassistant
+    topic_prefix: shadow_meter
+  log_level: info
+schema:
+  phases:
+    - phase: "match(^[A-Za-z0-9_]{1,16}$)"
+      mains: "match(^[a-z_]+\\.[a-z0-9_]+$)"
+      submeters:
+        - "match(^[a-z_]+\\.[a-z0-9_]+$)?"
+  context_domains:
+    - "list(light|switch|fan|input_boolean)?"
+  context_entities:
+    - "match(^[a-z_]+\\.[a-z0-9_]+$)?"
+  exclude_entities:
+    - "match(^[a-z_]+\\.[a-z0-9_]+$)?"
+  history_days: "int(0,60)"
+  min_step_w: "float(3,1000)"
+  influx:
+    enabled: bool
+    url: url
+    database: "match(^[A-Za-z0-9_.\\-]{1,64}$)"
+    username: "str?"
+    password: "password?"
+    power_measurement: "match(^[A-Za-z0-9_.\\-]{1,64}$)"
+    legacy_state_measurement: "match(^[A-Za-z0-9_.\\-]{0,64}$)?"
+    history_start: "match(^(\\d{4}-\\d{2}-\\d{2})?$)?"
+    verify_ssl: bool
+  mqtt:
+    host: "str?"
+    port: port
+    username: "str?"
+    password: "password?"
+    discovery_prefix: "match(^[A-Za-z0-9_.\\-]{1,64}$)"
+    topic_prefix: "match(^[A-Za-z0-9_.\\-]{1,64}$)"
+  log_level: "list(debug|info|warning|error)"

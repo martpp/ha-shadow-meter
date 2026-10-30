@@ -1,0 +1,50 @@
+name: Detection report
+description: Tell us what Shadow Meter found (or missed) in your home - the most helpful feedback right now
+labels: [detection]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every home is different. Reports like this one are how the detection gets better.
+        No exact data needed - rough numbers are fine. Don't share anything you don't want to be public.
+  - type: input
+    id: meter
+    attributes:
+      label: Whole-home meter
+      description: Device and how often it reports (e.g. "Shelly 3EM, ~3 s", "smart meter reader, 10 s")
+    validations:
+      required: true
+  - type: dropdown
+    id: phases
+    attributes:
+      label: Phases
+      options:
+        - Single phase
+        - Three phases
+    validations:
+      required: true
+  - type: dropdown
+    id: solar
+    attributes:
+      label: Solar panels / battery?
+      options:
+        - "No"
+        - "Yes - the meter shows consumption"
+        - "Yes - the meter shows net grid power"
+    validations:
+      required: true
+  - type: input
+    id: history
+    attributes:
+      label: Analysed history
+      placeholder: "14 days recorder / 2 years InfluxDB"
+  - type: textarea
+    id: correct
+    attributes:
+      label: Correct detections
+      description: e.g. "Fridge ~45 W, 78 % - correct"
+  - type: textarea
+    id: wrong
+    attributes:
+      label: Wrong or missed devices
+      description: e.g. "'Fridge' on phase B is really the network rack", "the dryer is never found"

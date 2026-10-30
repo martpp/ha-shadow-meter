@@ -1,0 +1,20 @@
+# Optional: `pip install pre-commit && pre-commit install` runs these checks before every commit.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
+    hooks:
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+      - id: detect-private-key
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 25bcf95026b96e2dd3c0aec3090c3d6ef6ca2e6c # v0.17.3
+    hooks:
+      - id: ruff-check
+        args: [--config, shadow_meter/engine/pyproject.toml]
+        files: ^shadow_meter/engine/
+      - id: ruff-format
+        args: [--config, shadow_meter/engine/pyproject.toml]
+        files: ^shadow_meter/engine/

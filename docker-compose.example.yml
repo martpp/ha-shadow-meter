@@ -1,0 +1,33 @@
+# Run the Shadow Meter engine on another machine than Home Assistant (e.g. a server or a VM).
+#
+# 1. Create a long-lived access token in Home Assistant (your profile -> Security).
+# 2. Put the options into ./config/options.json (same keys as the app options, see shadow_meter/DOCS.md).
+# 3. Create .env next to this file (never commit it):
+#      HA_URL=ws://homeassistant.local:8123/api/websocket
+#      HA_TOKEN=<long-lived access token>
+#      SHADOW_METER_API_TOKEN=<a long random string, e.g. from: openssl rand -hex 32>
+# 4. The container runs as user 10001, so the data folder must be writable for it:
+#      mkdir -p data config && sudo chown 10001 data
+#    docker compose -f docker-compose.example.yml up -d
+# 5. Open http://<host>:8099/#token=<SHADOW_METER_API_TOKEN>
+#
+# The UI is protected by the API token only. Do not expose the port to the internet; use it in your LAN
+# or behind a reverse proxy with TLS.
+services:
+  shadow-meter:
+    build: ./shadow_meter/engine
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "8099:8099"
+    volumes:
+      - ./data:/data
+      - ./config:/config:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m

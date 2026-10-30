@@ -1,0 +1,39 @@
+configuration:
+  phases:
+    name: Phases
+    description: >-
+      One entry per phase of your whole-home meter. "mains" is the power sensor (W) of that phase,
+      "submeters" are power sensors of devices on that phase that already have their own meter
+      (they are subtracted, so they are not detected again). Single-phase homes have one entry.
+  context_domains:
+    name: Context domains
+    description: >-
+      Entities of these domains are matched with the power steps (e.g. a light switching on together
+      with a 21 W step). Switches of smart plugs are usually better left out (their power is already metered).
+  context_entities:
+    name: Additional context entities
+    description: Further entities to match, e.g. a switch that powers an unmetered device.
+  exclude_entities:
+    name: Excluded entities
+    description: Entities that are never matched (e.g. LED indicator lights of devices).
+  history_days:
+    name: History from Home Assistant (days)
+    description: >-
+      How many days of the Home Assistant recorder history are analysed at the first start.
+      The recorder keeps 10 days by default.
+  min_step_w:
+    name: Smallest step (W)
+    description: Power changes below this value are ignored. Lower values find smaller devices but more noise.
+  influx:
+    name: InfluxDB (optional)
+    description: >-
+      Analyse years of history from the InfluxDB written by the Home Assistant InfluxDB integration (1.x).
+      A read-only user is enough.
+  mqtt:
+    name: MQTT (optional)
+    description: >-
+      Leave the host empty to use the MQTT service of the Supervisor (e.g. the Mosquitto app).
+      Needed to add detected devices to Home Assistant.
+  log_level:
+    name: Log level
+    description: How much the app writes to its log.

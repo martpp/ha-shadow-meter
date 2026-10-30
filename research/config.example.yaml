@@ -1,0 +1,86 @@
+# Shadow Meter for Home Assistant - configuration.
+# Copy to config.yaml and adapt to your home. config.yaml is git-ignored.
+# Entity names are the entity_id tags as Home Assistant writes them to InfluxDB (without the "sensor." prefix
+# for power sensors, with the domain prefix for lights/switches).
+
+timezone: Europe/Berlin   # for plots and hour-of-day statistics
+data_dir: ./data          # Parquet exports (large, git-ignored)
+out_dir: ./out            # analysis results (git-ignored)
+
+influx:
+  host: localhost
+  port: 8086
+  database: homeassistant
+  env_file: ~/.shadow-meter-influx.env   # INFLUX_USER=... / INFLUX_PW=...  (a read-only user is enough)
+  power_measurement: W    # HA InfluxDB integration: one measurement per unit
+  # Older HA versions wrote all states into one measurement "state" with tags domain/entity_id.
+  # Newer ones write one measurement per entity ("light.kitchen"). Both are read and merged.
+  legacy_state_measurement: state
+  export_start: "2023-01-01"
+
+# Whole-home meter, one power sensor per phase (e.g. Shelly 3EM)
+total_phases:
+  a: shellyem3_xxxxxxxxxxxx_channel_a_power
+  b: shellyem3_xxxxxxxxxxxx_channel_b_power
+  c: shellyem3_xxxxxxxxxxxx_channel_c_power
+
+# All individually metered devices (smart plugs, Shelly PM, ...) that are downstream of the main meter
+meters:
+  - dishwasher_power
+  - washing_machine_power
+  - desk_power
+  - tv_power
+  - oven_power
+  - network_rack_power
+  - bedside_led_power      # a light with its own plug -> great for validation, see metered_lights
+
+# Meters that are NOT behind the main meter (their steps never show up on any phase, see stepphase.py)
+meters_not_behind_main:
+  - garage_printer_power
+
+# Phase of a meter, if known (otherwise learned per quarter by phase_assign.py)
+meter_phase_fixed:
+  dishwasher_power: b
+  oven_power: c
+
+# Lights with their own power meter: used to validate the estimates, and the meter (not the
+# estimate) is subtracted in the residual
+metered_lights:
+  bedside_led_power: light.bedside_led
+
+# Lights to ignore in the joint regression: groups, duplicates (renamed entities), segments
+lights_exclude:
+  - light.kitchen_all
+  - light.living_room_group
+# Lights belonging to devices that are not behind the main meter
+lights_not_behind_main:
+  - light.printer_chamber_light
+
+# Live service (live/shadow_meter.py): detects fridge and stove and publishes them to Home Assistant via MQTT
+live:
+  poll_seconds: 10
+  window: 3h
+  mqtt:
+    env_file: ~/.shadow-meter-mqtt.env   # MQTT_HOST=... MQTT_PORT=1883 MQTT_USER=... MQTT_PW=...
+    discovery_prefix: homeassistant
+    id_prefix: shadow_meter   # MQTT topics <id_prefix>/... and unique_ids <id_prefix>_fridge_power, ...
+  # metered devices per phase that are subtracted before detection (only the phases used below)
+  meters:
+    a: [desk_power, washing_machine_power, bedside_led_power]
+    b: [dishwasher_power, network_rack_power]
+  fridge:
+    phase: a
+    on_step: [28, 75]       # W, compressor switch-on step
+    off_step: [28, 55]      # W, compressor switch-off step
+    min_run: 4min
+    max_run: 90min
+    power: 37               # W while running (from the long-term analysis, fridge_year.py)
+  stove:
+    phases: [a, b]
+    on_w: 500               # W above the rolling baseline (note: plain "on:" would be parsed as a boolean by YAML)
+    off_w: 150
+    off_delay: 3min         # hob plates cycle on/off at low power levels
+
+# Optional: readable names for figures (make_figures.py)
+display_names:
+  light.bedside_led: Bedside LED

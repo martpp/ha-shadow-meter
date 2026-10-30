@@ -1,0 +1,18 @@
+#!/usr/bin/with-contenv bashio
+# ==============================================================================
+# Start Shadow Meter
+# ==============================================================================
+
+# Without a broker in the options, use the MQTT service of the Supervisor (e.g. the Mosquitto app).
+# The credentials are only passed to the engine via the environment, never logged.
+if [[ -z "$(bashio::config 'mqtt.host')" ]] && bashio::services.available "mqtt"; then
+    MQTT_HOST="$(bashio::services mqtt 'host')"
+    MQTT_PORT="$(bashio::services mqtt 'port')"
+    MQTT_USER="$(bashio::services mqtt 'username')"
+    MQTT_PASSWORD="$(bashio::services mqtt 'password')"
+    export MQTT_HOST MQTT_PORT MQTT_USER MQTT_PASSWORD
+    bashio::log.info "Using the MQTT service of the Supervisor (${MQTT_HOST})"
+fi
+
+bashio::log.info "Starting Shadow Meter"
+exec python3 -m shadow_meter
