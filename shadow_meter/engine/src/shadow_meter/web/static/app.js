@@ -332,7 +332,7 @@ async function openSettings() {
         : [{ phase: "A", mains: "", submeters: [] }];
     const source = $("setup-source");
     source.hidden = data.source !== "options";
-    source.textContent = "The meters are currently set in the app options. Saving here takes over.";
+    source.textContent = "The meters are currently set in the options file. Saving here takes over.";
     $("use-suggestion").hidden = !data.suggestion.length;
     $("use-suggestion").textContent = `Use suggested meter (${data.suggestion.length} phases)`;
     $("use-suggestion").title = data.suggestion.map((p) => `${p.phase}: ${p.mains}`).join("\n");

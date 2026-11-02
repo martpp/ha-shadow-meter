@@ -4,6 +4,14 @@ All notable changes to this app are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this app uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] - 2026-11-02
+
+### Removed
+- The `phases` field of the app configuration page: it could only offer free-text fields. The meters are
+  chosen in the panel (Settings), which lists the power sensors of Home Assistant. If you entered phases
+  there, Settings opens after the update; choose your meters again. The standalone container still
+  accepts `phases` in `options.json`.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added

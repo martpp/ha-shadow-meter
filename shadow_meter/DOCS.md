@@ -38,8 +38,9 @@ MQTT integration. If the broker runs as an app, Shadow Meter finds it automatica
 
 ## Options
 
+The meters are not listed here: they are chosen in the panel (Settings).
+
 ```yaml
-phases: []          # normally empty: the meters are chosen in the panel (Settings)
 context_domains:
   - light
 context_entities: []
@@ -55,7 +56,6 @@ log_level: info
 
 | Option | Description |
 |---|---|
-| `phases` | Optional, for setups without the panel (e.g. the standalone container). One entry per phase: `phase` (name), `mains` (power sensor of the phase, W), `submeters` (power sensors of devices on that phase with their own meter). A setup saved in the panel takes precedence. |
 | `context_domains` | Entities of these domains are matched with power steps (default: `light`). Switches of smart plugs are usually better left out because their power is metered anyway. |
 | `context_entities` | Further entities to match, e.g. a switch that powers an unmetered device. |
 | `exclude_entities` | Entities never to match, e.g. status LEDs of devices. |
@@ -76,6 +76,10 @@ waiting for the database. Years of history can take an hour or more; the panel s
 The analysis of long histories needs some CPU and around 300 MB of RAM. If that is too much for your
 Raspberry Pi, run the engine as a normal container on another machine and connect it to Home Assistant
 with a long-lived access token - see the project README for `docker compose`.
+
+The meters are chosen in its web UI as well. For a setup without the UI, `options.json` also accepts
+`phases`, with one entry per phase: `phase` (name), `mains` (power sensor of the phase, W) and `submeters`
+(power sensors of devices on that phase with their own meter). A setup saved in the UI takes precedence.
 
 ## Security and privacy
 

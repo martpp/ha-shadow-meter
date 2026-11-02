@@ -1,10 +1,4 @@
 configuration:
-  phases:
-    name: Phases (optional)
-    description: >-
-      Leave empty and choose the meters in the Shadow Meter panel (Settings) instead - it lists your
-      power sensors. Only needed for setups without the panel: one entry per phase with "phase" (name),
-      "mains" (power sensor in W) and "submeters" (devices on that phase with their own meter).
   context_domains:
     name: Context domains
     description: >-
