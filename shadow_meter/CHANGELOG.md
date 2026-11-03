@@ -4,6 +4,18 @@ All notable changes to this app are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this app uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.2] - 2026-11-03
+
+### Fixed
+- "Running … of the time" and the kWh/day estimate were far too high when a single switch-off step was
+  missed (one cycle then lasted for hours). The run time per cycle is now capped at three times the
+  typical run time.
+- One device could show up as two candidates when its power drifts (e.g. a fridge compressor drawing
+  34 W on some runs and 39 W on others). Candidates on the same phase that are close in power and take
+  turns - they run in the same period but practically never at the same time - are now merged. This
+  also applies to an analysis that is already running. Candidates you have confirmed, renamed, rejected
+  or added to Home Assistant are never merged away.
+
 ## [0.2.1] - 2026-11-02
 
 ### Removed

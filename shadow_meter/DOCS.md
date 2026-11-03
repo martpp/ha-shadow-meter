@@ -11,7 +11,8 @@ but a single-phase meter works too.
 2. **Cycles.** A switch-on step and the matching switch-off step form a cycle: "~37 W for 20 minutes".
 3. **Candidates.** Similar cycles on the same phase are grouped. A group that runs 20 times a day at any
    hour with 30-250 W looks like a fridge; one with 2 kW for a few minutes at meal times looks like a kettle
-   or a hob. The confidence combines how well the pattern fits a type, how much evidence there is, and how
+   or a hob. Two groups with a similar power that take turns (never run at the same time) are one device
+   whose power drifts, and are merged. The confidence combines how well the pattern fits a type, how much evidence there is, and how
    consistent the power is.
 4. **Context.** Home Assistant knows when your lights are switched. If the power steps by the same amount
    every time a light switches on its own, that is the power of the light.

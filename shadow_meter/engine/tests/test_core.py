@@ -187,6 +187,45 @@ class TestClusters:
         new = restored.add(Cycle("a", 70_000, 70_100, 500, 500))
         assert new.id not in cs.clusters  # ids stay unique after loading
 
+    def test_missed_off_step_does_not_inflate_duty(self) -> None:
+        cs = ClusterSet()
+        for i in range(40):  # 15 min every hour: duty 25 %
+            cs.add(Cycle("a", i * 3600, i * 3600 + 900, 48, 37))
+        cl = cs.add(Cycle("a", 40 * 3600, 40 * 3600 + 10 * 3600, 48, 37))  # off step missed for 10 h
+        assert cl.features()["duty"] == pytest.approx(0.25, abs=0.05)
+        assert cl.features()["kwh_per_day"] == pytest.approx(37 * 0.25 * 24 / 1000, rel=0.2)
+
+    @staticmethod
+    def _two_clusters(second_offset_s: float) -> ClusterSet:
+        """A 39 W and a 34 W cluster on phase a, each running 15 min every 2 h."""
+        cs = ClusterSet()
+        for i in range(60):
+            t = i * 7200
+            cs.add(Cycle("a", t, t + 900, 48, 39))
+        other = cs.add(Cycle("a", second_offset_s - 7200, second_offset_s - 6300, 40, 30))  # new cluster
+        for i in range(60):
+            t = i * 7200 + second_offset_s
+            other.add(Cycle("a", t, t + 900, 44, 34), 0)
+        assert len(cs.clusters) == 2
+        return cs
+
+    def test_clusters_that_take_turns_are_one_device(self) -> None:
+        """One compressor at 34 or 39 W: the runs never overlap, so the two clusters are merged."""
+        cs = self._two_clusters(second_offset_s=3600)  # 34 W runs in the gaps of the 39 W runs
+        assert len(cs.merge_close()) == 1
+        assert len(cs.clusters) == 1
+
+    def test_overlapping_clusters_stay_apart(self) -> None:
+        cs = self._two_clusters(second_offset_s=300)  # both run at the same time: two devices
+        assert cs.merge_close() == []
+
+    def test_user_decided_cluster_is_kept(self) -> None:
+        cs = self._two_clusters(second_offset_s=3600)
+        first, second = sorted(cs.clusters, key=lambda k: cs.clusters[k].first_ts)
+        assert cs.merge_close(keep={second}) == [(second, first)]
+        cs = self._two_clusters(second_offset_s=3600)
+        assert cs.merge_close(keep=set(cs.clusters)) == []  # two decisions: never merged
+
 
 class TestContext:
     def test_solo_changes_are_matched(self) -> None:

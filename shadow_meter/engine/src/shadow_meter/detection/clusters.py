@@ -8,10 +8,12 @@ so user decisions (confirm, rename, ...) stay attached when the cluster keeps le
 
 from __future__ import annotations
 
+import bisect
 import itertools
 import math
 import statistics
 from collections import deque
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, tzinfo
 from typing import Any
@@ -68,7 +70,6 @@ class Cluster:
         window_start = self.last_ts - RECENT_WINDOW_S
         recent = [c for c in cyc if c.start_ts >= window_start]
         covered_s = max(3600.0, min(RECENT_WINDOW_S, self.last_ts - max(self.first_ts, cyc[0].start_ts)))
-        run_s = sum(c.duration_s for c in recent)
         starts = [c.start_ts for c in recent]
         gaps = [b - a for a, b in itertools.pairwise(starts)]
         gap_cv = statistics.pstdev(gaps) / statistics.mean(gaps) if len(gaps) >= 3 else math.nan
@@ -84,6 +85,10 @@ class Cluster:
         probs = [h / total for h in self.hour_counts if h]
         hour_uniformity = -sum(p * math.log(p) for p in probs) / math.log(24) if total else 0.0
         power = statistics.median(powers)
+        # run time per cycle capped at 3x the median: a single on step paired with a much later off step
+        # (a missed off step) must not turn a 15-minute compressor into one that runs all day
+        cap = 3 * statistics.median(c.duration_s for c in recent) if recent else 0.0
+        run_s = sum(min(c.duration_s, cap) for c in recent)
         duty = min(1.0, run_s / covered_s)
         return {
             "power_w": power,
@@ -125,6 +130,58 @@ class Cluster:
         return c
 
 
+def _clean(c: Cluster) -> list[Cycle]:
+    """Cycles with a plausible run time (<= 1.5 x median), in time order; drops mis-paired long cycles."""
+    med = statistics.median(x.duration_s for x in c.recent)
+    return sorted((x for x in c.recent if x.duration_s <= 1.5 * med), key=lambda x: x.start_ts)
+
+
+def _overlap_share(ref: list[Cycle], cycles: list[Cycle]) -> float:
+    """Share of `cycles` that overlap a cycle of `ref` (other than themselves); both in time order."""
+    starts = [x.start_ts for x in ref]
+    longest = max(x.duration_s for x in ref)
+    hits = 0
+    for c in cycles:
+        i = bisect.bisect_left(starts, c.end_ts) - 1  # cycles of ref that start before c ends, backwards
+        while i >= 0 and ref[i].start_ts >= c.start_ts - longest:
+            if ref[i] is not c and ref[i].end_ts > c.start_ts:
+                hits += 1
+                break
+            i -= 1
+    return hits / len(cycles)
+
+
+def takes_turns(a: Cluster, b: Cluster, min_cycles: int = 10, min_expected: float = 5.0) -> bool:
+    """True if two clusters behave like one device: they run in the same period but take turns.
+
+    One device whose power drifts (a compressor draws 34 W on some runs and 39 W on others) splits into
+    two clusters. Its cycles cannot overlap, except through detection noise (mis-paired steps), which
+    shows up as overlaps of a cluster with itself. Two independent devices additionally overlap by
+    chance: a cycle of `b` meets a cycle of `a` with probability p ~ (run time of a + number of a cycles
+    x run time of b) / period. One device if the overlaps between the clusters stay at the noise level:
+    below the midpoint between "noise" and "noise + chance", and clearly (2 standard errors) below the
+    level two independent devices would reach.
+    """
+    if not a.recent or not b.recent:
+        return False
+    ca, cb = _clean(a), _clean(b)
+    start = max(ca[0].start_ts, cb[0].start_ts)
+    end = min(ca[-1].end_ts, cb[-1].end_ts)
+    ca = [c for c in ca if start <= c.start_ts < end]
+    cb = [c for c in cb if start <= c.start_ts < end]
+    if end <= start or len(ca) < min_cycles or len(cb) < min_cycles:
+        return False
+    dur_b = statistics.median(c.duration_s for c in cb)
+    p = min(1.0, (sum(c.duration_s for c in ca) + len(ca) * dur_b) / (end - start))
+    if len(cb) * p < min_expected:
+        return False  # too little evidence (short or rare runs): leave them apart
+    noise = (_overlap_share(ca, ca) + _overlap_share(cb, cb)) / 2
+    cross = _overlap_share(ca, cb)
+    independent = noise + (1 - noise) * p
+    stderr = math.sqrt(max(cross * (1 - cross), 0.01) / len(cb))
+    return cross < noise + (1 - noise) * p / 2 and cross + 2 * stderr < independent
+
+
 class ClusterSet:
     """All clusters; assigns cycles and merges clusters that have grown together."""
 
@@ -149,22 +206,35 @@ class ClusterSet:
         best.add(c, datetime.fromtimestamp(c.start_ts, self.tz).hour)
         return best
 
-    def merge_close(self) -> list[tuple[str, str]]:
-        """Merge clusters on the same phase whose typical power has converged. Returns (kept, removed)."""
+    def merge_close(self, keep: Collection[str] = ()) -> list[tuple[str, str]]:
+        """Merge clusters on the same phase that belong to one device. Returns (kept, removed) pairs.
+
+        Two clusters are merged when their typical power has converged, or when they are close in power
+        and take turns: they run in the same weeks but (almost) never at the same time, which two
+        independent devices could not avoid (see `takes_turns`). Ids in `keep` (clusters the user has
+        decided on) are never removed: such a cluster absorbs the other one, and two of them stay apart.
+        """
         merged: list[tuple[str, str]] = []
         ids = sorted(self.clusters, key=lambda k: self.clusters[k].first_ts)
         for i, a_id in enumerate(ids):
-            a = self.clusters.get(a_id)
-            if a is None or not a.recent:
-                continue
             for b_id in ids[i + 1 :]:
-                b = self.clusters.get(b_id)
+                a, b = self.clusters.get(a_id), self.clusters.get(b_id)
+                if a is None or not a.recent:
+                    break
                 if b is None or b.phase != a.phase or not b.recent:
                     continue
-                if abs(a.power_w - b.power_w) / max(a.power_w, b.power_w) <= self.tolerance / 2:
-                    a.absorb(b)
-                    del self.clusters[b_id]
-                    merged.append((a_id, b_id))
+                if a_id in keep and b_id in keep:
+                    continue
+                mismatch = abs(a.power_w - b.power_w) / max(a.power_w, b.power_w)
+                if mismatch > self.tolerance / 2 and not (mismatch <= self.tolerance and takes_turns(a, b)):
+                    continue
+                if b_id in keep:
+                    kept, gone = b, a
+                else:
+                    kept, gone = a, b
+                kept.absorb(gone)
+                del self.clusters[gone.id]
+                merged.append((kept.id, gone.id))
         return merged
 
     def prune(self, now: float, min_count: int = 5, max_age_s: float = 14 * 86400) -> list[str]:

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shadow-meter"
-version = "0.2.1"
+version = "0.2.2"
 description = "Shadow Meter for Home Assistant: detect unmetered devices from the whole-home power consumption"
 readme = "README.md"
 license = "MIT"

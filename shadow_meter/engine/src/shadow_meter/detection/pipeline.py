@@ -10,7 +10,7 @@ serialised with `to_dict` so that an analysis survives restarts.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, tzinfo
 from typing import Any
@@ -91,9 +91,11 @@ class Detector:
         self.processed_until = end
         return new_steps
 
-    def maintain(self) -> list[tuple[str, str]]:
-        """Housekeeping: merge converged clusters, forget noise. Returns merged ids (kept, removed)."""
-        merged = self.clusters.merge_close()
+    def maintain(self, keep: Collection[str] = ()) -> list[tuple[str, str]]:
+        """Housekeeping: merge clusters of one device, forget noise. Returns merged ids (kept, removed).
+
+        Clusters in `keep` (the user decided on them) are never merged away."""
+        merged = self.clusters.merge_close(keep)
         if math.isfinite(self.processed_until):
             self.clusters.prune(self.processed_until)
         return merged

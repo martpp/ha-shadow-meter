@@ -1,6 +1,6 @@
 # https://contributors.home-assistant.io/apps/reference/configuration/
 name: Shadow Meter
-version: "0.2.1"
+version: "0.2.2"
 slug: shadow_meter
 description: Detect unmetered devices (fridge, stove, lights, ...) from your whole-home power consumption
 url: "https://github.com/martpp/ha-shadow-meter"

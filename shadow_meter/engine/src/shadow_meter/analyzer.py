@@ -170,7 +170,7 @@ class Analyzer:
             power = await source.power(self.detector.entities, t, e)
             changes = await source.changes(self.context, t, e) if self.context else []
             self.detector.process(power, changes, t, e)
-            self.detector.maintain()
+            self.detector.maintain(keep=self._decisions)
             await self.store.set_json("detector", self.detector.to_dict())
             await self.refresh(record=True, ts=e)
             t = e
@@ -216,7 +216,7 @@ class Analyzer:
                     await self._publish_states()
                 if now - last_refresh >= REFRESH_S:
                     last_refresh = now
-                    self.detector.maintain()
+                    self.detector.maintain(keep=self._decisions)
                     record = now - last_history >= HISTORY_EVERY_S
                     if record:
                         last_history = now
