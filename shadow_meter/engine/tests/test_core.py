@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from shadow_meter.detection.classify import band, classify
-from shadow_meter.detection.clusters import ClusterSet
+from shadow_meter.detection.clusters import Cluster, ClusterSet
 from shadow_meter.detection.context import ContextMatcher
 from shadow_meter.detection.cycles import CyclePairer
 from shadow_meter.detection.grid import CarryForwardGrid
@@ -186,6 +186,22 @@ class TestClusters:
         assert restored.to_dict() == cs.to_dict()
         new = restored.add(Cycle("a", 70_000, 70_100, 500, 500))
         assert new.id not in cs.clusters  # ids stay unique after loading
+
+    def test_type_survives_a_noisy_week_but_follows_new_evidence(self) -> None:
+        fridge = {"refrigerator": 0.85, "heating": 0.0, "unknown": 0.15}
+        noisy = {"refrigerator": 0.0, "heating": 0.0, "unknown": 1.0}
+        old = Cluster(id="A-1", phase="A", count=3000)
+        old.smooth(fridge, 0.0, 14 * 86400)
+        for day in range(1, 8):  # a week in which it does not look like a fridge
+            old.count += 30
+            old.smooth(noisy, day * 86400.0, 14 * 86400)
+        assert old.probs is not None and old.probs["refrigerator"] > old.probs["unknown"]
+        young = Cluster(id="A-2", phase="A", count=10)
+        young.smooth(noisy, 0.0, 14 * 86400)  # first guess from a handful of cycles
+        young.count = 200  # a day later it has 20 times the evidence
+        young.smooth(fridge, 86400.0, 14 * 86400)
+        assert young.probs is not None and young.probs["refrigerator"] > 0.75
+        assert Cluster.from_dict(young.to_dict()).probs == young.probs
 
     def test_missed_off_step_does_not_inflate_duty(self) -> None:
         cs = ClusterSet()

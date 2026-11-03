@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .detection.classify import DEVICE_TYPES
 from .detection.pipeline import Detector, PhaseConfig
+from .history import resample, thin
 from .models import Sample, StateChange
 from .mqtt.discovery import Publisher
 from .settings import Options, PhaseOptions
@@ -283,8 +284,7 @@ class Analyzer:
             points = [(c["id"], when, float(c["confidence"])) for c in cands]
             await self.store.add_confidence(points)
             for i, _, v in points:
-                self._history.setdefault(i, []).append((when, v))
-                del self._history[i][:-60]
+                self._history[i] = thin([*self._history.get(i, []), (when, v)])
         known = {c["id"] for c in self._candidates}
         self._candidates = [self._view(c) for c in cands]
         new = [c for c in self._candidates if c["id"] not in known]
@@ -303,7 +303,7 @@ class Analyzer:
             "status": d.get("status", "new"),
             "name": d.get("name") or suggested,
             "suggested_name": suggested,
-            "history": self._history.get(c["id"], [])[-30:],
+            "history": resample(self._history.get(c["id"], [])),  # whole lifetime, evenly over time
             "energy_kwh": self._energy.get(c["id"], 0.0),
             "running": prev.get("running", False),
             "live_power_w": prev.get("live_power_w", 0.0),

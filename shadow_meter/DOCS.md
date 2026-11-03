@@ -12,8 +12,11 @@ but a single-phase meter works too.
 3. **Candidates.** Similar cycles on the same phase are grouped. A group that runs 20 times a day at any
    hour with 30-250 W looks like a fridge; one with 2 kW for a few minutes at meal times looks like a kettle
    or a hob. Two groups with a similar power that take turns (never run at the same time) are one device
-   whose power drifts, and are merged. The confidence combines how well the pattern fits a type, how much evidence there is, and how
-   consistent the power is.
+   whose power drifts, and are merged. The confidence combines how well the pattern fits a type, how
+   much evidence there is, and how consistent the power is. The type is judged over about two weeks of
+   data, so a noisy week does not make a fridge disappear; a new device needs a few days to settle.
+   Small groups that are probably fragments of a stronger device of the same type are linked to it and
+   only shown with "show uncertain". The graph on a card shows the confidence over the whole analysis.
 4. **Context.** Home Assistant knows when your lights are switched. If the power steps by the same amount
    every time a light switches on its own, that is the power of the light.
 5. **Reactive power (optional).** If your meter also reports the power factor of each phase (Shelly 3EM,

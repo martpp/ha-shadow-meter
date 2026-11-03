@@ -18,9 +18,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Literal, TypeVar
 
+from .history import MAX_POINTS, thin
+
 SCHEMA_VERSION = 1
 T = TypeVar("T")
-HISTORY_POINTS = 60
 
 Status = Literal["new", "confirmed", "rejected", "active"]
 STATUSES: tuple[Status, ...] = ("new", "confirmed", "rejected", "active")
@@ -125,11 +126,17 @@ class Store:
 
         def work(db: sqlite3.Connection) -> None:
             db.executemany("INSERT INTO confidence VALUES (?, ?, ?)", points)
-            db.execute(
-                "DELETE FROM confidence WHERE rowid IN (SELECT rowid FROM (SELECT rowid, ROW_NUMBER() "
-                "OVER (PARTITION BY id ORDER BY ts DESC) AS n FROM confidence) WHERE n > ?)",
-                (HISTORY_POINTS,),
-            )
+            for cid in {p[0] for p in points}:  # thin out old points (see history.py), same as in memory
+                (n,) = db.execute("SELECT COUNT(*) FROM confidence WHERE id=?", (cid,)).fetchone()
+                if n <= MAX_POINTS:
+                    continue
+                rows = db.execute(
+                    "SELECT ts, value FROM confidence WHERE id=? ORDER BY ts", (cid,)
+                ).fetchall()
+                db.execute("DELETE FROM confidence WHERE id=?", (cid,))
+                db.executemany(
+                    "INSERT INTO confidence VALUES (?, ?, ?)", [(cid, t, v) for t, v in thin(rows)]
+                )
 
         await self._call(work)
 

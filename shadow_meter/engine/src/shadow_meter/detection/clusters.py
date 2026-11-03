@@ -42,6 +42,10 @@ class Cluster:
     recent: deque[Cycle] = field(default_factory=lambda: deque(maxlen=RESERVOIR))
     _power: float | None = field(default=None, repr=False, compare=False)
     _q: tuple[float | None, int] | None = field(default=None, repr=False, compare=False)
+    # type probabilities smoothed over time (see `smooth`); None until the first update
+    probs: dict[str, float] | None = None
+    probs_ts: float = -math.inf
+    probs_n: int = 0  # number of cycles at the last update
 
     @property
     def power_w(self) -> float:
@@ -69,8 +73,33 @@ class Cluster:
         self.hour_counts[local_hour] += 1
         self.recent.append(c)
 
+    def smooth(self, probs: dict[str, float], now: float, tau_s: float) -> None:
+        """Blend new type probabilities into the smoothed ones (time constant tau_s, in data time).
+
+        The features describe the last few hundred cycles, about a week of a fridge. A noisy week (other
+        devices, a hot spell, a defrost) can make it look like something else for a while; the smoothed
+        probabilities keep the type of a device that has been consistent for weeks.
+
+        The weight of the new probabilities grows with the time passed and with the new evidence: a
+        young cluster that doubled its cycles takes at least half of the new view, so a first guess made
+        from a handful of cycles does not stick."""
+        if self.probs is None:
+            a = 1.0
+        else:
+            by_time = 1 - math.exp(-max(0.0, now - self.probs_ts) / tau_s)
+            by_evidence = 1 - self.probs_n / self.count if self.count > self.probs_n else 0.0
+            a = max(by_time, by_evidence)
+        old = self.probs or {}
+        self.probs = {k: (1 - a) * old.get(k, v) + a * v for k, v in probs.items()}
+        self.probs_ts = max(now, self.probs_ts)
+        self.probs_n = self.count
+
     def absorb(self, other: Cluster) -> None:
         """Merge another cluster into this one (keeps this id)."""
+        if other.probs is not None:  # weighted by the number of cycles
+            mine, w = self.probs or other.probs, self.count / max(1, self.count + other.count)
+            self.probs = {k: w * mine.get(k, 0.0) + (1 - w) * v for k, v in other.probs.items()}
+            self.probs_ts = max(self.probs_ts, other.probs_ts)
         self._power = self._q = None
         self.count += other.count
         self.first_ts = min(self.first_ts, other.first_ts)
@@ -94,10 +123,14 @@ class Cluster:
         gap_cv = statistics.pstdev(gaps) / statistics.mean(gaps) if len(gaps) >= 3 else math.nan
         durations = [c.duration_s for c in cyc]
         med_duration = statistics.median(durations)
-        # robust spread of the run time: a compressor runs about equally long every time, random pairs don't
+        # robust spread of the run time: a compressor runs about equally long every time, random pairs don't.
+        # Only plausible cycles count: very short ones (< 2 min) and very long ones (> 3x the median) are
+        # mostly mis-paired steps of other devices or missed switch-off steps, and they must not decide it.
+        plausible = [d for d in durations if 120 <= d <= 3 * med_duration] or durations
+        med_plausible = statistics.median(plausible)
         duration_spread = (
-            statistics.median(abs(d - med_duration) for d in durations) / med_duration
-            if med_duration
+            statistics.median(abs(d - med_plausible) for d in plausible) / med_plausible
+            if med_plausible
             else math.inf
         )
         total = sum(self.hour_counts)
@@ -134,6 +167,9 @@ class Cluster:
             "first_ts": self.first_ts,
             "last_ts": self.last_ts,
             "hour_counts": self.hour_counts,
+            "probs": self.probs,
+            "probs_ts": self.probs_ts if math.isfinite(self.probs_ts) else None,
+            "probs_n": self.probs_n,
             # [start, end, on_w, off_w] plus dQ/dP when measured (older states have no fifth value)
             "recent": [
                 [c.start_ts, c.end_ts, c.on_w, c.off_w, *([c.q_ratio] if c.q_ratio is not None else [])]
@@ -150,6 +186,9 @@ class Cluster:
             first_ts=d["first_ts"],
             last_ts=d["last_ts"],
             hour_counts=list(d["hour_counts"]),
+            probs=d.get("probs"),
+            probs_n=int(d.get("probs_n", 0)),
+            probs_ts=float(d["probs_ts"]) if d.get("probs_ts") is not None else -math.inf,
         )
         for row in d["recent"]:
             s, e, on, off = row[:4]

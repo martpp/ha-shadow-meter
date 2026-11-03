@@ -71,6 +71,8 @@ function visible(c) {
   if (state.filter !== "all" && c.status !== state.filter) return false;
   if (state.filter === "all" && c.status === "rejected") return false;
   if (!state.showUncertain && c.status === "new" && c.confidence < 0.2) return false;
+  // probably part of another device (a fragment of a fridge, the power of a light): only on request
+  if (!state.showUncertain && c.status === "new" && c.explained_by) return false;
   return true;
 }
 
@@ -119,8 +121,25 @@ function renderCard(el, c) {
   trend.textContent = delta > 0.02 ? "▲" : delta < -0.02 ? "▼" : "";
   trend.className = "trend " + (delta > 0.02 ? "up" : delta < -0.02 ? "down" : "");
   trend.title = delta ? `${delta > 0 ? "+" : ""}${Math.round(delta * 100)} points recently` : "";
-  const pts = hist.length >= 2 ? hist.map((v, i) => `${(i / (hist.length - 1)) * 100},${22 - v * 20}`).join(" ") : "";
+  // x by time: the history covers the whole lifetime of the candidate (thinned out with age)
+  const times = (c.history || []).map((p) => p[0]);
+  const t0 = times[0];
+  const span = times.length >= 2 ? times[times.length - 1] - t0 : 0;
+  const pts = span > 0 ? hist.map((v, i) => `${((times[i] - t0) / span) * 100},${22 - v * 20}`).join(" ") : "";
   el.querySelector(".spark polyline").setAttribute("points", pts);
+  el.querySelector(".spark-axis").hidden = !(span > 0);
+  if (span > 0) {
+    const time = { hour: "2-digit", minute: "2-digit" };
+    const date = { day: "numeric", month: "short", ...(span > 300 * 86400 ? { year: "2-digit" } : {}) };
+    const fmt = (t) => {
+      const d = new Date(t * 1000);
+      if (span < 86400) return d.toLocaleTimeString([], time);
+      if (span < 7 * 86400) return d.toLocaleString([], { ...date, ...time });
+      return d.toLocaleDateString([], date);
+    };
+    el.querySelector(".spark-from").textContent = fmt(t0);
+    el.querySelector(".spark-to").textContent = fmt(t0 + span);
+  }
 
   const dl = el.querySelector(".facts");
   dl.replaceChildren();
@@ -133,7 +152,7 @@ function renderCard(el, c) {
   }
   const note = el.querySelector(".note");
   note.hidden = !c.explained_by;
-  note.textContent = c.explained_by ? `Probably the same device as ${nameOf(c.explained_by)}.` : "";
+  note.textContent = c.explained_by ? `Probably part of the same device as ${nameOf(c.explained_by)}.` : "";
 
   const sel = el.querySelector(".type-select");
   if (!sel.options.length) {

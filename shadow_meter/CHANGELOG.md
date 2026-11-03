@@ -4,6 +4,27 @@ All notable changes to this app are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this app uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.1] - 2026-11-03
+
+### Fixed
+- Candidates no longer pop up and vanish while a long history is analysed. In a test with ten months
+  of data a fridge was below 50 % on 169 of 247 days (mostly at 0 %, for weeks at a time); now only on
+  its first two days:
+  - The type probabilities are smoothed over about two weeks of data (weighted by new evidence, so a
+    young candidate still settles quickly). A noisy week no longer turns a fridge into "unknown".
+  - The spread of the run times only uses plausible cycles (not < 2 min or > 3x the typical run time,
+    which are mostly mis-paired steps), and varying run times lower the fridge score instead of ruling
+    it out (a fridge runs longer in summer and after a defrost).
+  - A compressor runs at least about 8 minutes; shorter regular "cycles" are noise, not a fridge.
+  - Fragments of a device - a few hundred of its cycles that ended up in a group of their own, e.g. a
+    "fridge" of 30 W next to the real one of 38 W - are linked to it ("Probably part of the same device
+    as ...") and only shown with "show uncertain".
+
+### Changed
+- The confidence graph on a card covers the whole lifetime of the candidate, with a time axis (dates
+  or times, depending on the span) and a line at 70 %. The history is thinned out with age instead of
+  keeping only the newest points, so it reaches back to the start of the analysis.
+
 ## [0.3.0] - 2026-11-03
 
 ### Added

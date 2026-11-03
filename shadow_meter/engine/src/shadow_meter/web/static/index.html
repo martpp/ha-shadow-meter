@@ -115,7 +115,10 @@
       <div class="confidence">
         <div class="conf-head"><span>Confidence</span><span class="conf-value"></span><span class="trend"></span></div>
         <div class="bar"><div class="bar-fill"></div></div>
-        <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><polyline></polyline></svg>
+        <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true">
+          <line class="spark-grid" x1="0" x2="100" y1="8" y2="8"></line><polyline></polyline>
+        </svg>
+        <div class="spark-axis"><span class="spark-from"></span><span class="spark-to"></span></div>
       </div>
       <dl class="facts"></dl>
       <p class="note" hidden></p>

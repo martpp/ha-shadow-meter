@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 
 from ..models import Sample, StateChange, Step
-from .classify import classify
+from .classify import classify, probabilities
 from .clusters import ClusterSet
 from .context import ContextMatcher
 from .cycles import CyclePairer
@@ -29,6 +29,8 @@ from .reactive import ReactiveTracker, reactive_power
 from .steps import StepDetector
 
 STEP_S = 5.0
+FRAGMENTING = {"refrigerator"}  # types whose fragments are linked to the dominant candidate
+TYPE_TAU_S = 14 * 86400.0  # time constant of the smoothed type probabilities (data time)
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,6 +118,10 @@ class Detector:
         Clusters in `keep` (the user decided on them) are never merged away."""
         merged = self.clusters.merge_close(keep)
         if math.isfinite(self.processed_until):
+            for cl in self.clusters.clusters.values():
+                if cl.count >= 5:
+                    cl.smooth(probabilities(cl.features()), self.processed_until, TYPE_TAU_S)
+        if math.isfinite(self.processed_until):
             self.clusters.prune(self.processed_until)
         return merged
 
@@ -126,7 +132,7 @@ class Detector:
             if cl.count < min_cycles:
                 continue
             f = cl.features()
-            c = classify(f)
+            c = classify(f, cl.probs)
             out.append(
                 {
                     "id": f"cluster:{cl.id}",
@@ -197,8 +203,20 @@ def _optional(entity_id: str | None) -> tuple[str, ...]:
 
 
 def _link_explained(cands: list[dict[str, Any]]) -> None:
-    """Mark pattern candidates that are probably the same device as a confident entity candidate."""
+    """Mark pattern candidates that are probably the same device as another, stronger candidate.
+
+    - a confident entity candidate (a light) of about the same power on the same phase, or
+    - for fridges: a dominant fridge on the same phase, confident, with at least three times the cycles,
+      within +-50 % of its power and with a compatible reactive power ratio. Such fragments are cycles of
+      the same compressor that were paired with foreign steps or drifted in power (a fridge leaves a few
+      small "fridges" next to it). Not for heating elements: hob plates of 0.9, 1.2 and 1.6 kW are
+      separate devices, not fragments of each other.
+    """
     entities = [c for c in cands if c["source"] == "entity" and c["confidence"] >= 0.5]
+    patterns = sorted(
+        (c for c in cands if c["source"] == "pattern" and c["confidence"] >= 0.5),
+        key=lambda c: -c["features"].get("count", 0.0),
+    )
     for c in cands:
         c["explained_by"] = None
         if c["source"] != "pattern":
@@ -207,4 +225,16 @@ def _link_explained(cands: list[dict[str, Any]]) -> None:
             similar = abs(e["power_w"] - c["power_w"]) <= 0.2 * max(e["power_w"], c["power_w"])
             if e["phase"] == c["phase"] and similar:
                 c["explained_by"] = e["id"]
+                break
+        if c["explained_by"] is not None:
+            continue
+        for d in patterns:
+            if d is c or d["phase"] != c["phase"] or d["type"] != c["type"] or c["type"] not in FRAGMENTING:
+                continue
+            stronger = d["features"].get("count", 0.0) >= 3 * c["features"].get("count", 0.0)
+            similar = abs(d["power_w"] - c["power_w"]) <= 0.5 * d["power_w"]
+            qa, qb = d["features"].get("q_ratio", math.nan), c["features"].get("q_ratio", math.nan)
+            q_ok = not (math.isfinite(qa) and math.isfinite(qb)) or abs(qa - qb) <= 0.15
+            if stronger and similar and q_ok:
+                c["explained_by"] = d["id"]
                 break

@@ -61,13 +61,15 @@ def _scores(f: dict[str, float]) -> dict[str, float]:
     resistive = _ramp(q, 0.25, 0.08) if known else 1.0  # 1 up to 0.08, 0 from 0.25 on
     motor = _ramp(q, 0.02, 0.1) if known else 1.0  # 0 up to 0.02, 1 from 0.1 on
     return {
-        # compressor: 30-250 W, runs 5-90 min about equally long every time, many times a day,
-        # independent of the time of day
+        # compressor: 30-250 W, runs 8-90 min (shorter "cycles" are mostly noise) with similar run times,
+        # many times a day, independent of the time of day
         "refrigerator": band(p, 30, 250)
-        * band(dur, 5, 90)
+        * band(dur, 8, 90)
         * band(per_day, 6, 60, 0.5)
         * min(1.0, max(0.0, (uniform - 0.6) / 0.3))
-        * min(1.0, max(0.0, (0.7 - dur_spread) / 0.4))
+        # equal run times make a compressor likely; varying ones lower the score but do not rule it out
+        # (a fridge runs longer in summer and after a defrost)
+        * (0.1 + 0.9 * _ramp(dur_spread, 0.9, 0.4))
         * (0.05 + 0.95 * motor),
         # heating element: >= 800 W, minutes to an hour, used at certain times of the day
         "heating": band(p, 800, 6000, 0.15) * band(dur, 0.5, 60, 0.6) * (0.05 + 0.95 * resistive),
@@ -81,10 +83,15 @@ def _ramp(x: float, zero: float, one: float) -> float:
     return min(1.0, max(0.0, (x - zero) / (one - zero)))
 
 
-def classify(features: dict[str, float]) -> Classification:
+def probabilities(features: dict[str, float]) -> dict[str, float]:
     scores = _scores(features)
     total = sum(scores.values())
-    probs = {k: v / total for k, v in scores.items()}
+    return {k: v / total for k, v in scores.items()}
+
+
+def classify(features: dict[str, float], smoothed: dict[str, float] | None = None) -> Classification:
+    """Type and confidence; with `smoothed` probabilities (kept over time) instead of the current ones."""
+    probs = smoothed if smoothed else probabilities(features)
     best = max(probs, key=lambda k: probs[k])
     n = features.get("count", 0.0)
     evidence = 1 - math.exp(-n / 20)  # ~63 % after 20 cycles, ~99 % after 100
