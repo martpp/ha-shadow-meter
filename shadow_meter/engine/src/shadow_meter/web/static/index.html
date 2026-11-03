@@ -45,6 +45,22 @@
     <div class="sub-list" id="setup-subs"></div>
     <p class="note">Saving restarts the analysis. If you change the meters of the phases, the analysis starts
       over; devices you confirmed from lights are kept.</p>
+    <div id="history-box" hidden>
+      <h3>History</h3>
+      <p class="hint" id="history-info"></p>
+      <div class="row">
+        <button type="button" id="reanalyse">Analyse the history again</button>
+      </div>
+      <div id="reanalyse-confirm" hidden>
+        <p class="note">The detected devices are discovered anew: their names, types and confirmations are
+          lost, and devices you added to Home Assistant from patterns are removed there. Devices confirmed
+          from lights are kept.</p>
+        <div class="row">
+          <button type="button" id="reanalyse-yes">Yes, start over</button>
+          <button type="button" id="reanalyse-no">Cancel</button>
+        </div>
+      </div>
+    </div>
     <p class="error" id="setup-error" hidden role="alert"></p>
     <div class="actions">
       <button type="button" class="primary" id="setup-save">Save</button>

@@ -333,6 +333,13 @@ async function openSettings() {
     const source = $("setup-source");
     source.hidden = data.source !== "options";
     source.textContent = "The meters are currently set in the options file. Saving here takes over.";
+    $("history-box").hidden = !data.source; // only once an analysis exists
+    askReanalyse(false);
+    $("history-info").textContent = data.influx
+      ? "An InfluxDB is linked. The analysis continues where it stopped; to include older history " +
+        "(e.g. after linking the InfluxDB), analyse it again from the start."
+      : `The history comes from the Home Assistant recorder (${data.history_days} days). Link an ` +
+        "InfluxDB in the app configuration and restart the app to analyse years of history.";
     $("use-suggestion").hidden = !data.suggestion.length;
     $("use-suggestion").textContent = `Use suggested meter (${data.suggestion.length} phases)`;
     $("use-suggestion").title = data.suggestion.map((p) => `${p.phase}: ${p.mains}`).join("\n");
@@ -360,6 +367,28 @@ async function saveSettings() {
   } catch (err) {
     showSetupError(err.message.replace(/^\d+ /, ""));
     $("setup-save").disabled = false;
+  }
+}
+
+// no window.confirm(): it can be blocked silently inside the Home Assistant iframe
+function askReanalyse(show) {
+  $("reanalyse-confirm").hidden = !show;
+  $("reanalyse").hidden = show;
+}
+
+async function reanalyse() {
+  $("reanalyse-yes").disabled = true;
+  try {
+    await api("api/reanalyse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm: true }),
+    });
+    $("reanalyse-yes").textContent = "Starting over…";
+    setTimeout(() => location.reload(), 800);
+  } catch (err) {
+    showSetupError(err.message.replace(/^\d+ /, ""));
+    $("reanalyse-yes").disabled = false;
   }
 }
 
@@ -398,6 +427,9 @@ async function init() {
   $("open-settings").addEventListener("click", openSettings);
   $("setup-cancel").addEventListener("click", () => ($("setup").hidden = true));
   $("setup-save").addEventListener("click", saveSettings);
+  $("reanalyse").addEventListener("click", () => askReanalyse(true));
+  $("reanalyse-no").addEventListener("click", () => askReanalyse(false));
+  $("reanalyse-yes").addEventListener("click", reanalyse);
   $("add-phase").addEventListener("click", () => {
     const used = new Set(setup.phases.map((p) => p.phase));
     const name = ["A", "B", "C", "D", "E", "F", "G", "H"].find((n) => !used.has(n)) || "";

@@ -5,6 +5,7 @@ The meter setup comes from the web UI (stored in the database) or, if none was s
 everything learned from the old meters is discarded: detector state, confidence history, energy
 counters, and pattern devices that were added to Home Assistant (their ids belong to the old analysis).
 Decisions about entity-based devices (lights, ...) are kept - they do not depend on the meters.
+The same reset happens when the user asks to analyse the history again (e.g. after linking an InfluxDB).
 """
 
 from __future__ import annotations
@@ -84,6 +85,18 @@ class Engine:
         await self._launch(setup)
         return changed
 
+    async def reanalyse(self) -> None:
+        """Start the analysis over with the current setup, e.g. after linking an InfluxDB.
+
+        The analysis only moves forward in time, so older history can only be added by starting over.
+        Same reset as for new meters: pattern devices get new ids, decisions about lights are kept.
+        """
+        if self.setup is None:
+            raise RuntimeError("no meters set up")
+        await self.stop()
+        await self._reset("analysing the history again")
+        await self._launch(self.setup)
+
     async def states(self) -> list[dict[str, Any]]:
         """All entity states of Home Assistant (for the setup page)."""
         if self._list_states is not None:
@@ -119,8 +132,8 @@ class Engine:
                 await self.store.set_json("detector", self.analyzer.detector.to_dict())
         await self.ha.close()
 
-    async def _reset(self) -> None:
-        _LOG.info("meter setup changed: starting the analysis over")
+    async def _reset(self, reason: str = "meter setup changed") -> None:
+        _LOG.info("%s: starting the analysis over", reason)
         await self.store.delete_json("detector", "energy")
         await self.store.clear_confidence()
         for device_id, decision in (await self.store.devices()).items():

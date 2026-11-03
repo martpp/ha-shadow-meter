@@ -143,6 +143,38 @@ async def test_setup_flow_without_options(tmp_path: Path) -> None:
     store.close()
 
 
+async def test_reanalyse_starts_over(tmp_path: Path) -> None:
+    """After linking an InfluxDB the user can analyse the history again from the start."""
+    store = Store(tmp_path / "db.sqlite")
+    engine = Engine(NO_PHASES, store, FakeHA(make_house(days=1)))  # type: ignore[arg-type]
+    await engine.start()
+    c = await client_for(engine, runtime("standalone"))
+    try:
+        r = await c.post("/api/reanalyse", json={"confirm": True})
+        assert r.status == 409  # nothing to analyse before the meters are chosen
+        assert (await (await c.get("/api/setup")).json())["influx"] is False
+        assert (await c.put("/api/setup", json=ABC)).status == 200
+        await engine.stop()
+        await store.set_json("detector", {"processed_until": 123.0})
+        await store.update_device("cluster:A-3", status="confirmed", name="Fridge")
+        await store.update_device("entity:light.hallway", status="active", name="Hallway")
+        assert (await c.post("/api/reanalyse", data="confirm=true")).status == 415  # no plain form posts
+        assert (await c.post("/api/reanalyse", json={})).status == 400  # explicit confirmation needed
+        assert await store.get_json("detector") is not None
+        r = await c.post("/api/reanalyse", json={"confirm": True})
+        assert r.status == 200
+        assert engine.analyzer is not None and engine.setup is not None
+        devices = await store.devices()
+        assert "cluster:A-3" not in devices
+        assert devices["entity:light.hallway"]["name"] == "Hallway"
+    finally:
+        await c.close()
+        await engine.stop()
+    saved = await store.get_json("detector")
+    assert saved is None or saved.get("processed_until") != 123.0  # the old state is gone
+    store.close()
+
+
 async def test_changing_meters_resets_learned_data(tmp_path: Path) -> None:
     store = Store(tmp_path / "db.sqlite")
     mqtt = FakeMqtt()

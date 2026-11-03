@@ -161,6 +161,7 @@ def build_app(engine: Engine, runtime: Runtime) -> web.Application:
     app.router.add_patch("/api/candidates/{id}", update)
     app.router.add_get("/api/setup", get_setup)
     app.router.add_put("/api/setup", put_setup)
+    app.router.add_post("/api/reanalyse", reanalyse)
     app.router.add_get("/api/events", events)
     return app
 
@@ -179,6 +180,8 @@ async def get_setup(request: web.Request) -> web.Response:
         "phases": current,
         "sensors": sensors,
         "suggestion": suggest_phases(sensors),
+        "influx": engine.influx is not None,
+        "history_days": engine.options.history_days,
     }
     return web.json_response(body, dumps=_dumps)
 
@@ -202,6 +205,26 @@ async def put_setup(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text=f"not a power sensor in Home Assistant: {', '.join(unknown)}")
     reset = await engine.reconfigure(setup)
     return web.json_response({"ok": True, "reset": reset})
+
+
+async def reanalyse(request: web.Request) -> web.Response:
+    """Start the analysis over, e.g. after linking an InfluxDB. Discards the learned pattern devices.
+
+    Needs a JSON body {"confirm": true}: a JSON request cannot be sent by a plain HTML form of another
+    site, and the explicit flag guards against accidental calls."""
+    engine = request.app[ENGINE]
+    if request.content_type != "application/json":
+        raise web.HTTPUnsupportedMediaType()
+    try:
+        body = await request.json()
+    except json.JSONDecodeError as err:
+        raise web.HTTPBadRequest(text="invalid request") from err
+    if not isinstance(body, dict) or body.get("confirm") is not True:
+        raise web.HTTPBadRequest(text='send {"confirm": true} to start over')
+    if engine.setup is None:
+        raise web.HTTPConflict(text="Choose your power meters in Settings first")
+    await engine.reanalyse()
+    return web.json_response({"ok": True})
 
 
 async def events(request: web.Request) -> web.WebSocketResponse:

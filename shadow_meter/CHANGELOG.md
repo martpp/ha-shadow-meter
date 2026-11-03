@@ -4,6 +4,15 @@ All notable changes to this app are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this app uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.2.3] - 2026-11-03
+
+### Added
+- **Analyse the history again** in Settings: starts the analysis over with all history sources, e.g.
+  after linking an InfluxDB (until now the analysis only continued where it stopped, so older history
+  of a newly linked InfluxDB was never read). Asks for confirmation in the panel, because the detected
+  devices are discovered anew; devices confirmed from lights are kept.
+- Settings shows where the history comes from (Home Assistant recorder or InfluxDB).
+
 ## [0.2.2] - 2026-11-03
 
 ### Fixed

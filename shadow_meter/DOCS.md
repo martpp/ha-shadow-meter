@@ -68,6 +68,12 @@ log_level: info
 
 The analysis state is kept in the app's data folder. A restart continues where it stopped.
 
+**Linking an InfluxDB later.** The analysis only moves forward in time, so a restart after linking an
+InfluxDB uses it for new data only. To include the older history, enter the `influx` options, restart
+the app, open **Settings** in the panel and choose **Analyse the history again**. This starts the
+analysis over: the detected devices are discovered anew (their names, types and confirmations are lost,
+and pattern devices you added to Home Assistant are removed there); devices confirmed from lights are kept.
+
 How long the first analysis takes depends mostly on how fast the history can be read: in a test with
 3.5 months of InfluxDB data (3 phases, ~30 sub-meters, ~25 lights) it took about 9 minutes, most of it
 waiting for the database. Years of history can take an hour or more; the panel shows the progress.
