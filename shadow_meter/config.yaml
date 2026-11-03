@@ -1,6 +1,6 @@
 # https://contributors.home-assistant.io/apps/reference/configuration/
 name: Shadow Meter
-version: "0.2.3"
+version: "0.3.0"
 slug: shadow_meter
 description: Detect unmetered devices (fridge, stove, lights, ...) from your whole-home power consumption
 url: "https://github.com/martpp/ha-shadow-meter"
@@ -41,6 +41,7 @@ options:
     password: ""
     power_measurement: W
     legacy_state_measurement: state
+    power_factor_measurement: "%"
     history_start: ""
     verify_ssl: true
   mqtt:
@@ -68,6 +69,7 @@ schema:
     password: "password?"
     power_measurement: "match(^[A-Za-z0-9_.\\-]{1,64}$)"
     legacy_state_measurement: "match(^[A-Za-z0-9_.\\-]{0,64}$)?"
+    power_factor_measurement: "match(^[A-Za-z0-9_.%\\-]{0,64}$)?"
     history_start: "match(^(\\d{4}-\\d{2}-\\d{2})?$)?"
     verify_ssl: bool
   mqtt:

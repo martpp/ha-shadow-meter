@@ -30,7 +30,8 @@
     <h2 id="setup-title">Power meters</h2>
     <p class="hint">
       Choose the power sensor (in W) of each phase of your whole-home meter. Single-phase homes need one
-      entry. Devices that already have their own meter (smart plugs, ...) can be assigned to their phase:
+      entry. If your meter also reports the power factor (Shelly 3EM, ...), choose it too: it tells heating
+      elements from motors. It is optional, suggested where the names match, and does not restart the analysis. Devices that already have their own meter (smart plugs, ...) can be assigned to their phase:
       their power is subtracted, so they are not "detected" again.
     </p>
     <p class="hint" id="setup-source" hidden></p>
@@ -38,6 +39,7 @@
     <div class="row">
       <button type="button" id="add-phase">Add phase</button>
       <button type="button" id="use-suggestion" hidden>Use suggestion</button>
+      <button type="button" id="use-pf" hidden>Use suggested power factor sensors</button>
     </div>
     <h3>Devices with their own meter</h3>
     <p class="hint">Optional. If you don't know the phase of a plug, leave it out - the results only get a bit noisier.</p>

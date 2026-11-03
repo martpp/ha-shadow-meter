@@ -24,6 +24,8 @@ from . import parse_power, to_changes
 
 _NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,127}$")  # inside "double quotes"
 _TAG = re.compile(r"^[A-Za-z0-9_]{1,128}$")  # inside 'single quotes'
+# measurements are named after the unit ("W", "%"); also inside "double quotes", where % is harmless
+_MEASUREMENT = re.compile(r"^[A-Za-z0-9_.%\-]{1,128}$")
 _ENTITY = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 MAX_POINTS = 2_000_000  # per query; a day of a 1 s sensor is 86 400
 
@@ -36,6 +38,13 @@ def ident(v: str) -> str:
     """A name used inside double quotes (measurement, database). Raises if it is not safe."""
     if not _NAME.fullmatch(v):
         raise InfluxError(f"unsafe name: {v!r}")
+    return v
+
+
+def measurement(v: str) -> str:
+    """A measurement name used inside double quotes. Raises if it is not safe."""
+    if not _MEASUREMENT.fullmatch(v):
+        raise InfluxError(f"unsafe measurement name: {v!r}")
     return v
 
 
@@ -69,14 +78,18 @@ class Influx:
         password: str = "",
         power_measurement: str = "W",
         legacy_state_measurement: str = "state",
+        power_factor_measurement: str = "%",
         verify_ssl: bool = True,
     ) -> None:
         self._session = session
         self._url = url.rstrip("/") + "/query"
         self._db = ident(database)
         self._auth = aiohttp.BasicAuth(username, password) if username else None
-        self._power = ident(power_measurement)
-        self._legacy = ident(legacy_state_measurement) if legacy_state_measurement else ""
+        self._power = measurement(power_measurement)
+        # power factor sensors (optional, for the reactive power) are read together with the power
+        names = [self._power, *([measurement(power_factor_measurement)] if power_factor_measurement else [])]
+        self._sources = ", ".join(f'"{m}"' for m in dict.fromkeys(names))
+        self._legacy = measurement(legacy_state_measurement) if legacy_state_measurement else ""
         self._ssl = verify_ssl
 
     async def query(self, q: str) -> list[dict[str, Any]]:
@@ -116,11 +129,11 @@ class Influx:
         by_object = {entity(e)[1]: e for e in entity_ids}
         where = f"entity_id =~ /^({'|'.join(sorted(by_object))})$/"
         before = await self.query(
-            f'SELECT last("value") AS "value" FROM "{self._power}" WHERE {where} '
+            f'SELECT last("value") AS "value" FROM {self._sources} WHERE {where} '
             f"AND time < '{_t(start)}' AND time > '{_t(start - 2 * 86400)}' GROUP BY \"entity_id\""
         )
         main = await self.query(
-            f'SELECT "value" FROM "{self._power}" WHERE {where} '
+            f'SELECT "value" FROM {self._sources} WHERE {where} '
             f"AND time >= '{_t(start)}' AND time < '{_t(end)}' GROUP BY \"entity_id\" LIMIT {MAX_POINTS}"
         )
         out: dict[str, list[Sample]] = {e: [] for e in entity_ids}

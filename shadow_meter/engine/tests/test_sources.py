@@ -12,7 +12,7 @@ from aiohttp.test_utils import TestServer
 
 from shadow_meter.sources import parse_on, parse_power, to_changes
 from shadow_meter.sources.homeassistant import AuthError, HomeAssistant
-from shadow_meter.sources.influx import Influx, InfluxError, entity, ident
+from shadow_meter.sources.influx import Influx, InfluxError, entity, ident, measurement
 
 TOKEN = "secret-token"
 
@@ -202,6 +202,7 @@ async def test_influx_power_and_changes(influx_url: str) -> None:
         ]
         assert len(QUERIES) == 2  # one query for the values before start, one for the range
         assert all("entity_id =~ /^(phase_a)$/" in q for q in QUERIES)
+        assert all('FROM "W", "%"' in q for q in QUERIES)  # power factor sensors are read along
         both = await db.power(["sensor.phase_a", "sensor.phase_b"], 1000, 2000)
         assert [s.value for s in both["sensor.phase_b"]] == [50.0]
         QUERIES.clear()
@@ -227,6 +228,17 @@ def test_unsafe_names_rejected(bad: str) -> None:
 @pytest.mark.parametrize("ok", ["W", "home-assistant", "home_assistant", "light.kitchen", "kWh"])
 def test_safe_names_accepted(ok: str) -> None:
     assert ident(ok) == ok
+
+
+@pytest.mark.parametrize("ok", ["W", "%", "kWh", "state"])
+def test_measurement_names(ok: str) -> None:
+    assert measurement(ok) == ok
+
+
+@pytest.mark.parametrize("bad", ['%"; DROP', "", "a b", '"', "a\\b", "W'"])
+def test_unsafe_measurement_names_rejected(bad: str) -> None:
+    with pytest.raises(InfluxError):
+        measurement(bad)
 
 
 @pytest.mark.parametrize(

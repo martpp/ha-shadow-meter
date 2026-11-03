@@ -121,6 +121,7 @@ h2 { font-size: 14px; margin: 0 0 8px; color: var(--text-2); text-transform: upp
 .setup-card h3 { margin: 8px 0 0; font-size: 15px; }
 .hint { margin: 0; color: var(--text-2); font-size: 13px; }
 .phase-row { display: grid; grid-template-columns: 90px 1fr auto; gap: 8px; align-items: center; }
+.phase-row .pf-select { grid-column: 2 / 3; font-size: 13px; }
 .phase-row input, .phase-row select, .sub-row select, #sub-filter {
   font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--border);
   border-radius: 6px; padding: 5px 8px; min-width: 0; width: 100%;

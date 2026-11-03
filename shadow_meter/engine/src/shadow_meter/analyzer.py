@@ -66,7 +66,9 @@ class Analyzer:
         self.clock = clock
         self.tz: tzinfo = UTC
         chosen = options.phases if phases is None else phases
-        self.phase_configs = [PhaseConfig(p.phase, p.mains, tuple(p.submeters)) for p in chosen]
+        self.phase_configs = [
+            PhaseConfig(p.phase, p.mains, tuple(p.submeters), p.power_factor) for p in chosen
+        ]
         self.detector = Detector(self.phase_configs, min_step_w=options.min_step_w)
         self.context: list[str] = []
         self.names: dict[str, str] = {}

@@ -32,7 +32,7 @@ from ..analyzer import Analyzer, PublishUnavailable
 from ..detection.classify import DEVICE_TYPES
 from ..engine import Engine
 from ..settings import Runtime, Setup
-from ..setup import power_sensors, suggest_phases
+from ..setup import power_factor_sensors, power_sensors, suggest_phases, suggest_power_factors
 
 _LOG = logging.getLogger(__name__)
 INGRESS_PROXY = ipaddress.ip_address("172.30.32.2")
@@ -170,16 +170,21 @@ async def get_setup(request: web.Request) -> web.Response:
     """Power sensors of Home Assistant, the current setup and a suggestion for the phases."""
     engine = request.app[ENGINE]
     try:
-        sensors = power_sensors(await engine.states())
+        states = await engine.states()
     except Exception as err:  # Home Assistant unreachable: tell the UI instead of failing silently
         _LOG.warning("could not read the entities of Home Assistant: %s", err)
         raise web.HTTPBadGateway(text="Home Assistant is not reachable, try again in a moment") from err
+    sensors, pf_sensors = power_sensors(states), power_factor_sensors(states)
+    pf_for = suggest_power_factors([s["entity_id"] for s in sensors], [s["entity_id"] for s in pf_sensors])
     current = engine.setup.model_dump(mode="json")["phases"] if engine.setup else []
+    suggestion = [{**p, "power_factor": pf_for.get(p["mains"])} for p in suggest_phases(sensors)]
     body = {
         "source": engine.source,
         "phases": current,
         "sensors": sensors,
-        "suggestion": suggest_phases(sensors),
+        "suggestion": suggestion,
+        "pf_sensors": pf_sensors,
+        "pf_suggestion": pf_for,  # power sensor -> its power factor sensor
         "influx": engine.influx is not None,
         "history_days": engine.options.history_days,
     }
@@ -198,11 +203,16 @@ async def put_setup(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text=reasons) from err
     except json.JSONDecodeError as err:
         raise web.HTTPBadRequest(text="invalid request") from err
-    known = {s["entity_id"] for s in power_sensors(await engine.states())}
+    states = await engine.states()
+    known = {s["entity_id"] for s in power_sensors(states)}
     used = {p.mains for p in setup.phases} | {s for p in setup.phases for s in p.submeters}
     unknown = sorted(used - known)
     if unknown:
         raise web.HTTPBadRequest(text=f"not a power sensor in Home Assistant: {', '.join(unknown)}")
+    known_pf = {s["entity_id"] for s in power_factor_sensors(states)}
+    unknown = sorted({p.power_factor for p in setup.phases if p.power_factor} - known_pf)
+    if unknown:
+        raise web.HTTPBadRequest(text=f"not a power factor sensor in Home Assistant: {', '.join(unknown)}")
     reset = await engine.reconfigure(setup)
     return web.json_response({"ok": True, "reset": reset})
 

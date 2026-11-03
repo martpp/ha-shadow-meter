@@ -5,13 +5,15 @@ power is already known, so it must not be "detected" again). Steps in the residu
 cycles, cycles are clustered into device candidates, and steps are matched with entity changes.
 The detector is fed chunk by chunk (history day by day, live every few seconds); all state can be
 serialised with `to_dict` so that an analysis survives restarts.
+With an optional power factor sensor per phase, every cycle also gets the reactive/real power ratio of
+its switch-on step (see `reactive.py`); without one everything works on the real power alone.
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, tzinfo
 from typing import Any
 
@@ -23,6 +25,7 @@ from .clusters import ClusterSet
 from .context import ContextMatcher
 from .cycles import CyclePairer
 from .grid import CarryForwardGrid
+from .reactive import ReactiveTracker, reactive_power
 from .steps import StepDetector
 
 STEP_S = 5.0
@@ -35,6 +38,7 @@ class PhaseConfig:
     phase: str
     mains: str
     submeters: tuple[str, ...] = ()
+    power_factor: str | None = None  # optional power factor sensor of the mains (reactive power)
 
 
 class Detector:
@@ -42,9 +46,11 @@ class Detector:
         if not phases:
             raise ValueError("at least one phase is required")
         self.phases = {p.phase: p for p in phases}
-        self.grids = {e: CarryForwardGrid(STEP_S) for p in phases for e in (p.mains, *p.submeters)}
+        sensors = [e for p in phases for e in (p.mains, *p.submeters, *_optional(p.power_factor))]
+        self.grids = {e: CarryForwardGrid(STEP_S) for e in sensors}
         self.steps = {p.phase: StepDetector(p.phase, STEP_S, min_w=min_step_w) for p in phases}
         self.pairers = {p.phase: CyclePairer(p.phase) for p in phases}
+        self.reactive = {p.phase: ReactiveTracker(STEP_S) for p in phases if p.power_factor}
         self.clusters = ClusterSet(tz=tz)
         self.context = ContextMatcher()
         self.processed_until = -math.inf
@@ -73,19 +79,32 @@ class Detector:
             if start <= c.ts < end:
                 self.context.add_change(c)
         for phase, cfg in self.phases.items():
-            residual = self.grids[cfg.mains].fill(samples.get(cfg.mains, ()), start, end)
+            mains = self.grids[cfg.mains].fill(samples.get(cfg.mains, ()), start, end)
+            residual = mains
             for sub in cfg.submeters:
                 sub_values = self.grids[sub].fill(samples.get(sub, ()), start, end)
                 residual = residual - np.nan_to_num(sub_values)  # unknown sub-meter -> assume 0 W
-            for step in self.steps[phase].feed(residual, start):
-                new_steps.append(step)
+            phase_steps = self.steps[phase].feed(residual, start)
+            tracker = self.reactive.get(phase)
+            if tracker is not None and cfg.power_factor:
+                pf = self.grids[cfg.power_factor].fill(samples.get(cfg.power_factor, ()), start, end)
+                tracker.add(math.floor(start / STEP_S) * STEP_S, residual, reactive_power(mains, pf))
+                for step in phase_steps:
+                    tracker.watch(step)
+                tracker.resolve()  # before pairing: a cycle takes the value of its switch-on step
+            new_steps.extend(phase_steps)
         new_steps.sort(key=lambda s: s.ts)
         for step in new_steps:
             self.context.add_step(step)
             cycle = self.pairers[step.phase].feed(step)
             if cycle is not None:
+                tracker = self.reactive.get(cycle.phase)
+                if tracker is not None:
+                    cycle = replace(cycle, q_ratio=tracker.ratio(cycle.start_ts))
                 self.clusters.add(cycle)
                 self.cycle_count += 1
+        for tracker in self.reactive.values():
+            tracker.forget(end)
         self.step_count += len(new_steps)
         self.context.flush(end)
         self.processed_until = end
@@ -171,6 +190,10 @@ class Detector:
         self.processed_until = float(d.get("processed_until", -math.inf))
         self.step_count = int(d.get("step_count", 0))
         self.cycle_count = int(d.get("cycle_count", 0))
+
+
+def _optional(entity_id: str | None) -> tuple[str, ...]:
+    return (entity_id,) if entity_id else ()
 
 
 def _link_explained(cands: list[dict[str, Any]]) -> None:

@@ -29,6 +29,7 @@ src/shadow_meter/
 │   ├── grid.py        irregular sensor reports -> regular 5 s grid (carried forward until the next report)
 │   ├── steps.py       streaming step detection (median filter, local maxima)
 │   ├── cycles.py      pair switch-on with switch-off steps
+│   ├── reactive.py    optional: reactive power (dQ/dP) of switch-on steps from a power factor sensor
 │   ├── clusters.py    online clustering of cycles into candidates, features
 │   ├── classify.py    rule-based device type + confidence
 │   ├── context.py     match Home Assistant entity changes (lights, ...) with steps, corrected for chance

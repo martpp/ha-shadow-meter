@@ -7,6 +7,10 @@ type with the amount of evidence (number of cycles) and how consistent the power
 
 The numbers are plausible defaults for European households, not a trained model. They are meant to be
 replaced or complemented by a model trained on public datasets later.
+
+With a power factor sensor the reactive/real power ratio of the switch-on steps (dQ/dP) is known as
+well. Heating elements are purely resistive (~0), a fridge compressor is clearly above 0 (~0.2 in a test
+household). A known ratio that does not fit lowers the score of a type; without one nothing changes.
 """
 
 from __future__ import annotations
@@ -52,6 +56,10 @@ def _scores(f: dict[str, float]) -> dict[str, float]:
     per_day = f.get("cycles_per_day", math.nan)
     uniform = f.get("hour_uniformity", 0.0)
     dur_spread = f.get("duration_spread", math.inf)
+    q = f.get("q_ratio", math.nan)
+    known = math.isfinite(q)
+    resistive = _ramp(q, 0.25, 0.08) if known else 1.0  # 1 up to 0.08, 0 from 0.25 on
+    motor = _ramp(q, 0.02, 0.1) if known else 1.0  # 0 up to 0.02, 1 from 0.1 on
     return {
         # compressor: 30-250 W, runs 5-90 min about equally long every time, many times a day,
         # independent of the time of day
@@ -59,12 +67,18 @@ def _scores(f: dict[str, float]) -> dict[str, float]:
         * band(dur, 5, 90)
         * band(per_day, 6, 60, 0.5)
         * min(1.0, max(0.0, (uniform - 0.6) / 0.3))
-        * min(1.0, max(0.0, (0.7 - dur_spread) / 0.4)),
+        * min(1.0, max(0.0, (0.7 - dur_spread) / 0.4))
+        * (0.05 + 0.95 * motor),
         # heating element: >= 800 W, minutes to an hour, used at certain times of the day
-        "heating": band(p, 800, 6000, 0.15) * band(dur, 0.5, 60, 0.6),
+        "heating": band(p, 800, 6000, 0.15) * band(dur, 0.5, 60, 0.6) * (0.05 + 0.95 * resistive),
         # baseline so that weak matches end up as "unknown"
         "unknown": 0.15,
     }
+
+
+def _ramp(x: float, zero: float, one: float) -> float:
+    """0 at `zero`, 1 at `one`, linear in between and clamped (works in both directions)."""
+    return min(1.0, max(0.0, (x - zero) / (one - zero)))
 
 
 def classify(features: dict[str, float]) -> Classification:

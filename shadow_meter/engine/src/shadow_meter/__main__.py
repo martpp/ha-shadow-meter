@@ -60,6 +60,7 @@ async def run(options: Options, runtime: Runtime) -> None:
                 password=o.password.get_secret_value(),
                 power_measurement=o.power_measurement,
                 legacy_state_measurement=o.legacy_state_measurement,
+                power_factor_measurement=o.power_factor_measurement,
                 verify_ssl=o.verify_ssl,
             )
         link = _mqtt(options)

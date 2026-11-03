@@ -22,6 +22,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, SecretStr, fi
 ENTITY_RE = re.compile(r"^[a-z_]+\.[a-z0-9_]+$")
 PHASE_RE = re.compile(r"^[A-Za-z0-9_]{1,16}$")
 NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
+MEASUREMENT_RE = re.compile(r"^[A-Za-z0-9_.%\-]{1,64}$")  # InfluxDB measurements are units: "W", "%"
 
 
 def _entity(v: str) -> str:
@@ -46,10 +47,17 @@ def _optional_name(v: str) -> str:
     return v if v == "" else _name(v)
 
 
+def _optional_measurement(v: str) -> str:
+    if v and not MEASUREMENT_RE.fullmatch(v):
+        raise ValueError(f"invalid measurement name: {v!r}")
+    return v
+
+
 EntityId = Annotated[str, AfterValidator(_entity)]
 PhaseName = Annotated[str, AfterValidator(_phase)]
 Identifier = Annotated[str, AfterValidator(_name)]
 OptionalIdentifier = Annotated[str, AfterValidator(_optional_name)]
+OptionalMeasurement = Annotated[str, AfterValidator(_optional_measurement)]
 
 
 class _Model(BaseModel):
@@ -60,6 +68,8 @@ class PhaseOptions(_Model):
     phase: PhaseName
     mains: EntityId
     submeters: list[EntityId] = []
+    # optional power factor sensor of the mains: adds the reactive power to the detection
+    power_factor: EntityId | None = None
 
 
 class InfluxOptions(_Model):
@@ -68,9 +78,11 @@ class InfluxOptions(_Model):
     database: Identifier = "homeassistant"
     username: str = ""
     password: SecretStr = SecretStr("")
-    power_measurement: Identifier = "W"
+    power_measurement: Annotated[str, Field(min_length=1), AfterValidator(_optional_measurement)] = "W"
     # older HA versions wrote all states into one measurement "state"; empty = not used
-    legacy_state_measurement: OptionalIdentifier = "state"
+    legacy_state_measurement: OptionalMeasurement = "state"
+    # Home Assistant writes power factor sensors in % into "%"; empty = not read from InfluxDB
+    power_factor_measurement: OptionalMeasurement = "%"
     history_start: date | None = None  # empty = as far back as the data goes (max. history_days_max)
     verify_ssl: bool = True
 
@@ -108,10 +120,17 @@ class Setup(_Model):
             raise ValueError("a sub-meter can only belong to one phase")
         if set(mains) & set(subs):
             raise ValueError("a mains meter cannot also be a sub-meter")
+        pfs = [p.power_factor for p in self.phases if p.power_factor]
+        if len(set(pfs)) != len(pfs):
+            raise ValueError("a power factor sensor can only belong to one phase")
+        if set(pfs) & (set(mains) | set(subs)):
+            raise ValueError("a power factor sensor cannot also be a power meter")
         return self
 
     def fingerprint(self) -> str:
-        """Identifies the meter setup; the analysis starts over when it changes."""
+        """Identifies the meter setup; the analysis starts over when it changes.
+
+        The power factor sensors are not part of it: adding one only adds information to new cycles."""
         return "|".join(f"{p.phase}={p.mains}:{','.join(sorted(p.submeters))}" for p in self.phases)
 
 

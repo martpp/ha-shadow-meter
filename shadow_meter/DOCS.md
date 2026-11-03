@@ -16,6 +16,12 @@ but a single-phase meter works too.
    consistent the power is.
 4. **Context.** Home Assistant knows when your lights are switched. If the power steps by the same amount
    every time a light switches on its own, that is the power of the light.
+5. **Reactive power (optional).** If your meter also reports the power factor of each phase (Shelly 3EM,
+   Shelly Pro 3EM, ...), Shadow Meter measures how much the reactive power changes with every switch-on
+   step (dQ/dP). Heating elements are purely resistive (~0), motors and power supplies are not (a fridge
+   compressor is ~0.2). Devices with the same power but a different kind of load are kept apart, and a
+   "heating element" that behaves like a motor is not called one. Without a power factor sensor everything
+   works on the real power alone.
 
 You see all candidates in the Shadow Meter panel, can rename them, change the type, confirm or reject
 them, and **add them to Home Assistant**. An added device gets three entities: running (on/off), power (W)
@@ -27,8 +33,11 @@ and energy (kWh, for the Energy dashboard).
 2. Install **Shadow Meter**.
 3. Start the app and open the **Shadow Meter** panel in the sidebar.
 4. Choose your meters in **Settings** (opens by itself on the first start): the power sensor of each
-   phase, and optionally the phase of devices that already have their own meter. Shadow Meter
-   suggests the phases of common 3-phase meters (Shelly 3EM, Shelly Pro 3EM, meter readers with L1-L3).
+   phase, optionally its power factor sensor, and optionally the phase of devices that already have their
+   own meter. Shadow Meter suggests the phases of common 3-phase meters (Shelly 3EM, Shelly Pro 3EM, meter
+   readers with L1-L3) and the power factor sensors that belong to them. Adding or removing a power factor
+   sensor does not restart the analysis; it applies to the cycles from then on (use **Analyse the history
+   again** to apply it to the history as well).
 
 The meters are chosen in the panel because the app configuration page of Home Assistant cannot show an
 entity picker. Changing the meters later restarts the analysis from the beginning; devices you
@@ -62,7 +71,7 @@ log_level: info
 | `exclude_entities` | Entities never to match, e.g. status LEDs of devices. |
 | `history_days` | Days of Home Assistant recorder history to analyse at the first start (the recorder keeps 10 days by default). |
 | `min_step_w` | Power changes below this value are ignored. |
-| `influx` | Optional: analyse years of history from an InfluxDB 1.x written by the Home Assistant InfluxDB integration. `url`, `database`, `username`/`password` (a read-only user is enough), `power_measurement` (default `W`), `legacy_state_measurement` (older Home Assistant versions wrote all states into `state`), `history_start` (`YYYY-MM-DD`, optional). |
+| `influx` | Optional: analyse years of history from an InfluxDB 1.x written by the Home Assistant InfluxDB integration. `url`, `database`, `username`/`password` (a read-only user is enough), `power_measurement` (default `W`), `legacy_state_measurement` (older Home Assistant versions wrote all states into `state`), `power_factor_measurement` (default `%`, for the optional power factor sensors), `history_start` (`YYYY-MM-DD`, optional). |
 | `mqtt` | Leave `host` empty to use the MQTT service of the Supervisor. Otherwise `host`, `port`, `username`, `password`. `discovery_prefix` must match the MQTT integration (default `homeassistant`). |
 | `log_level` | `debug`, `info`, `warning` or `error`. |
 

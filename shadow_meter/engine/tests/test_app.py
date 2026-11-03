@@ -65,6 +65,7 @@ class FakeHA:
             st("sensor.dishwasher", "Dishwasher power", "0.5", "W"),
             st("sensor.heat_pump", "Heat pump", "1.2", "kW"),  # not in W: not offered
             st("sensor.temperature", "Temperature", "21.5", "°C"),
+            st("sensor.phase_a_power_factor", "Phase A power factor", "62.0", "%"),
         ]
 
     async def power(self, entity_ids: list[str], start: float, end: float) -> dict[str, list[Sample]]:

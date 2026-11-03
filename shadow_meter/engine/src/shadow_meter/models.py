@@ -43,6 +43,9 @@ class Cycle:
     end_ts: float
     on_w: float  # size of the switch-on step (may include an inrush peak)
     off_w: float  # size of the switch-off step (closer to the running power)
+    # reactive / real power of the switch-on step (dQ/dP): ~0 for heating elements, clearly > 0 for
+    # motors; None without a power factor sensor or when the step could not be measured cleanly
+    q_ratio: float | None = None
 
     @property
     def duration_s(self) -> float:

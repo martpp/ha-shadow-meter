@@ -22,6 +22,13 @@ from ..models import Cycle
 
 RESERVOIR = 300
 RECENT_WINDOW_S = 7 * 86400
+# reactive/real power ratio (dQ/dP, only with a power factor sensor): a cluster's typical value counts
+# once it has MIN_Q measured cycles. A cycle does not join a cluster whose ratio differs by more than
+# Q_ASSIGN_TOL (heating ~0, fridge compressor ~0.2, other motors and power supplies higher), and two
+# clusters whose ratios differ by more than Q_MERGE_TOL are never merged.
+MIN_Q = 5
+Q_ASSIGN_TOL = 0.25
+Q_MERGE_TOL = 0.15
 
 
 @dataclass
@@ -34,6 +41,7 @@ class Cluster:
     hour_counts: list[int] = field(default_factory=lambda: [0] * 24)
     recent: deque[Cycle] = field(default_factory=lambda: deque(maxlen=RESERVOIR))
     _power: float | None = field(default=None, repr=False, compare=False)
+    _q: tuple[float | None, int] | None = field(default=None, repr=False, compare=False)
 
     @property
     def power_w(self) -> float:
@@ -42,8 +50,19 @@ class Cluster:
             self._power = statistics.median(c.power_w for c in self.recent) if self.recent else math.nan
         return self._power
 
+    @property
+    def q_ratio(self) -> float | None:
+        """Typical dQ/dP of the cycles, or None without enough measured cycles (cached like power_w)."""
+        return self._q_stats()[0]
+
+    def _q_stats(self) -> tuple[float | None, int]:
+        if self._q is None:
+            values = [c.q_ratio for c in self.recent if c.q_ratio is not None]
+            self._q = (statistics.median(values) if len(values) >= MIN_Q else None, len(values))
+        return self._q
+
     def add(self, c: Cycle, local_hour: int) -> None:
-        self._power = None
+        self._power = self._q = None
         self.count += 1
         self.first_ts = min(self.first_ts, c.start_ts)
         self.last_ts = max(self.last_ts, c.end_ts)
@@ -52,7 +71,7 @@ class Cluster:
 
     def absorb(self, other: Cluster) -> None:
         """Merge another cluster into this one (keeps this id)."""
-        self._power = None
+        self._power = self._q = None
         self.count += other.count
         self.first_ts = min(self.first_ts, other.first_ts)
         self.last_ts = max(self.last_ts, other.last_ts)
@@ -90,6 +109,7 @@ class Cluster:
         cap = 3 * statistics.median(c.duration_s for c in recent) if recent else 0.0
         run_s = sum(min(c.duration_s, cap) for c in recent)
         duty = min(1.0, run_s / covered_s)
+        q_ratio, q_count = self._q_stats()
         return {
             "power_w": power,
             "on_w": statistics.median(c.on_w for c in cyc),
@@ -102,6 +122,8 @@ class Cluster:
             "hour_uniformity": hour_uniformity,
             "kwh_per_day": power * duty * 24 / 1000,
             "count": float(self.count),
+            "q_ratio": q_ratio if q_ratio is not None else math.nan,
+            "q_count": float(q_count),
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -112,7 +134,11 @@ class Cluster:
             "first_ts": self.first_ts,
             "last_ts": self.last_ts,
             "hour_counts": self.hour_counts,
-            "recent": [[c.start_ts, c.end_ts, c.on_w, c.off_w] for c in self.recent],
+            # [start, end, on_w, off_w] plus dQ/dP when measured (older states have no fifth value)
+            "recent": [
+                [c.start_ts, c.end_ts, c.on_w, c.off_w, *([c.q_ratio] if c.q_ratio is not None else [])]
+                for c in self.recent
+            ],
         }
 
     @classmethod
@@ -125,8 +151,10 @@ class Cluster:
             last_ts=d["last_ts"],
             hour_counts=list(d["hour_counts"]),
         )
-        for s, e, on, off in d["recent"]:
-            c.recent.append(Cycle(phase=c.phase, start_ts=s, end_ts=e, on_w=on, off_w=off))
+        for row in d["recent"]:
+            s, e, on, off = row[:4]
+            q = float(row[4]) if len(row) > 4 else None
+            c.recent.append(Cycle(phase=c.phase, start_ts=s, end_ts=e, on_w=on, off_w=off, q_ratio=q))
         return c
 
 
@@ -182,6 +210,11 @@ def takes_turns(a: Cluster, b: Cluster, min_cycles: int = 10, min_expected: floa
     return cross < noise + (1 - noise) * p / 2 and cross + 2 * stderr < independent
 
 
+def _q_compatible(a: float | None, b: float | None, tolerance: float) -> bool:
+    """False only if both reactive power ratios are known and clearly differ."""
+    return a is None or b is None or abs(a - b) <= tolerance
+
+
 class ClusterSet:
     """All clusters; assigns cycles and merges clusters that have grown together."""
 
@@ -195,7 +228,7 @@ class ClusterSet:
         best: Cluster | None = None
         best_mismatch = self.tolerance
         for cl in self.clusters.values():
-            if cl.phase != c.phase or not cl.recent:
+            if cl.phase != c.phase or not cl.recent or not _q_compatible(c.q_ratio, cl.q_ratio, Q_ASSIGN_TOL):
                 continue
             mismatch = abs(cl.power_w - c.power_w) / max(cl.power_w, c.power_w)
             if mismatch <= best_mismatch:
@@ -225,6 +258,8 @@ class ClusterSet:
                     continue
                 if a_id in keep and b_id in keep:
                     continue
+                if not _q_compatible(a.q_ratio, b.q_ratio, Q_MERGE_TOL):
+                    continue  # same power, different kind of load (e.g. heating vs. motor)
                 mismatch = abs(a.power_w - b.power_w) / max(a.power_w, b.power_w)
                 if mismatch > self.tolerance / 2 and not (mismatch <= self.tolerance and takes_turns(a, b)):
                     continue

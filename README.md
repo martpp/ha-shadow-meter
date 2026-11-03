@@ -20,6 +20,8 @@ Confirm a device and it appears in Home Assistant with power and energy, ready f
 - **History first, then live:** analyses the Home Assistant recorder history - or years of data from an
   InfluxDB 1.x - day by day, then follows the live data. A restart continues where it stopped.
 - **Explainable candidates:** "~37 W, 22 cycles/day, runs 15 min, any time of day → fridge, 84 %".
+- **Reactive power (optional):** with a power factor sensor, heating elements and motors of the same power
+  are told apart.
 - **Context from Home Assistant:** light switching is matched with power steps, so lights get their real
   power - and their names.
 - **One click to Home Assistant:** confirmed devices get *running*, *power* and *energy* entities via MQTT.

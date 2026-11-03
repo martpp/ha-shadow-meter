@@ -84,6 +84,10 @@ function facts(c) {
     rows.push(["Cycles", `${Math.round(f.count || 0).toLocaleString()} (${(f.cycles_per_day || 0).toFixed(1)}/day)`]);
     rows.push(["Runs for", `${(f.duration_min || 0).toFixed(1)} min`]);
     rows.push(["Running", `${pct(f.duty)} of the time`]);
+    if (f.q_ratio != null && Number.isFinite(f.q_ratio)) {
+      const kind = f.q_ratio < 0.08 ? "resistive, like heating" : "inductive, like a motor or power supply";
+      rows.push(["Reactive", `ΔQ/ΔP ${f.q_ratio.toFixed(2)} (${kind})`]);
+    }
     rows.push(["Seen", `${fmtDate(c.first_seen)} – ${fmtDate(c.last_seen)}`]);
   }
   return rows;
@@ -230,7 +234,7 @@ function updateCandidates(list) {
 }
 
 // ---- settings: choose the meters -----------------------------------------------------------------
-const setup = { sensors: [], phases: [], suggestion: [] };
+const setup = { sensors: [], phases: [], suggestion: [], pfSensors: [], pfSuggestion: {} };
 
 function sensorLabel(s) {
   const value = s.value == null ? "–" : `${fmtW(s.value)} W`;
@@ -256,9 +260,29 @@ function renderPhases() {
     sel.add(new Option("— choose the power sensor of this phase —", ""));
     for (const s of setup.sensors) sel.add(new Option(`${sensorLabel(s)} · ${s.entity_id}`, s.entity_id));
     sel.value = p.mains || "";
+    // optional power factor sensor: adds the reactive power (heating vs. motor) to the detection
+    const pf = document.createElement("select");
+    pf.className = "pf-select";
+    pf.setAttribute("aria-label", `Power factor sensor of phase ${p.phase} (optional)`);
+    pf.add(new Option("— no power factor sensor (optional) —", ""));
+    for (const s of setup.pfSensors) {
+      const value = s.value == null ? "–" : Math.abs(s.value) > 1 ? `${s.value} %` : `${s.value}`;
+      pf.add(new Option(`Power factor: ${s.name} (${value}) · ${s.entity_id}`, s.entity_id));
+    }
+    pf.value = p.power_factor || "";
+    pf.hidden = !setup.pfSensors.length;
+    pf.addEventListener("change", () => {
+      p.power_factor = pf.value || null;
+      $("use-pf").hidden = !setup.phases.some((q) => !q.power_factor && setup.pfSuggestion[q.mains]);
+    });
     sel.addEventListener("change", () => {
       p.mains = sel.value;
       setup.phases.forEach((q) => (q.submeters = q.submeters.filter((e) => e !== p.mains)));
+      if (!p.power_factor && setup.pfSuggestion[p.mains]) {
+        p.power_factor = setup.pfSuggestion[p.mains];
+        pf.value = p.power_factor;
+      }
+      $("use-pf").hidden = !setup.phases.some((q) => !q.power_factor && setup.pfSuggestion[q.mains]);
       renderSubs();
     });
     const remove = document.createElement("button");
@@ -270,10 +294,12 @@ function renderPhases() {
       renderPhases();
       renderSubs();
     });
-    row.append(name, sel, remove);
+    row.append(name, sel, remove, pf);
     box.append(row);
   });
   $("add-phase").disabled = setup.phases.length >= 8;
+  // offered when a phase has no power factor sensor yet but one obviously belongs to its meter
+  $("use-pf").hidden = !setup.phases.some((p) => !p.power_factor && setup.pfSuggestion[p.mains]);
 }
 
 function renderSubs() {
@@ -325,6 +351,8 @@ async function openSettings() {
     const data = await api("api/setup");
     setup.sensors = data.sensors;
     setup.suggestion = data.suggestion;
+    setup.pfSensors = data.pf_sensors || [];
+    setup.pfSuggestion = data.pf_suggestion || {};
     setup.phases = data.phases.length
       ? data.phases.map((p) => ({ ...p, submeters: [...p.submeters] }))
       : data.suggestion.length
@@ -352,7 +380,12 @@ async function openSettings() {
 }
 
 async function saveSettings() {
-  const phases = setup.phases.map((p) => ({ phase: p.phase.trim(), mains: p.mains, submeters: p.submeters }));
+  const phases = setup.phases.map((p) => ({
+    phase: p.phase.trim(),
+    mains: p.mains,
+    submeters: p.submeters,
+    power_factor: p.power_factor || null,
+  }));
   if (phases.some((p) => !p.mains)) return showSetupError("Choose a power sensor for every phase.");
   $("setup-save").disabled = true;
   try {
@@ -433,9 +466,13 @@ async function init() {
   $("add-phase").addEventListener("click", () => {
     const used = new Set(setup.phases.map((p) => p.phase));
     const name = ["A", "B", "C", "D", "E", "F", "G", "H"].find((n) => !used.has(n)) || "";
-    setup.phases.push({ phase: name, mains: "", submeters: [] });
+    setup.phases.push({ phase: name, mains: "", submeters: [], power_factor: null });
     renderPhases();
     renderSubs();
+  });
+  $("use-pf").addEventListener("click", () => {
+    for (const p of setup.phases) if (!p.power_factor) p.power_factor = setup.pfSuggestion[p.mains] || null;
+    renderPhases();
   });
   $("use-suggestion").addEventListener("click", () => {
     setup.phases = setup.suggestion.map((p) => ({ ...p, submeters: [] }));

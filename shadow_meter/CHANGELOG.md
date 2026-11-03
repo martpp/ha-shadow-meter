@@ -4,6 +4,18 @@ All notable changes to this app are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this app uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] - 2026-11-03
+
+### Added
+- **Reactive power (optional):** choose the power factor sensor of each phase in Settings (suggested for
+  Shelly 3EM / Pro 3EM). Every switch-on step then also gets its reactive/real power ratio dQ/dP:
+  heating elements are ~0, motors and power supplies clearly above. Devices with the same power but a
+  different kind of load are kept apart and never merged, and a type that does not fit the measured
+  ratio (a "heating element" that behaves like a motor) loses its confidence. The cards show the ratio.
+  Without a power factor sensor nothing changes. Adding one does not restart the analysis.
+- InfluxDB: the power factor sensors are read from the measurement `%` (option
+  `power_factor_measurement`), together with the power.
+
 ## [0.2.3] - 2026-11-03
 
 ### Added

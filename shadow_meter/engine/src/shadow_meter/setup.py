@@ -1,4 +1,4 @@
-"""Meter setup helpers for the web UI: list the power sensors of Home Assistant, suggest phases.
+"""Meter setup helpers for the web UI: list the power (factor) sensors of Home Assistant, suggest phases.
 
 Home Assistant app options cannot offer an entity picker, so the meters are chosen in the app's own UI.
 """
@@ -32,6 +32,42 @@ def power_sensors(states: list[dict[str, Any]]) -> list[dict[str, Any]]:
             value = None
         out.append({"entity_id": eid, "name": str(attrs.get("friendly_name") or eid), "value": value})
     return sorted(out, key=lambda s: s["name"].lower())
+
+
+def power_factor_sensors(states: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Power factor sensors (device class power_factor, or "power_factor" in the id), sorted by name."""
+    out = []
+    for st in states:
+        eid = st.get("entity_id", "")
+        attrs = st.get("attributes") or {}
+        if not eid.startswith("sensor.") or not ENTITY_RE.fullmatch(eid):
+            continue
+        if attrs.get("device_class") != "power_factor" and "power_factor" not in eid:
+            continue
+        if attrs.get("unit_of_measurement") not in (None, "%"):
+            continue
+        try:
+            value: float | None = float(st.get("state"))  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            value = None
+        out.append({"entity_id": eid, "name": str(attrs.get("friendly_name") or eid), "value": value})
+    return sorted(out, key=lambda s: s["name"].lower())
+
+
+def suggest_power_factors(power_ids: list[str], pf_ids: list[str]) -> dict[str, str]:
+    """Power sensor -> power factor sensor of the same meter channel, where the names make it obvious.
+
+    Shelly 3EM: ..._channel_a_power -> ..._channel_a_power_factor; Shelly Pro 3EM: ..._phase_a_active_power
+    -> ..._phase_a_power_factor.
+    """
+    available = set(pf_ids)
+    out = {}
+    for eid in power_ids:
+        for suffix in ("_active_power", "_power"):
+            if eid.endswith(suffix) and (pf := eid.removesuffix(suffix) + "_power_factor") in available:
+                out[eid] = pf
+                break
+    return out
 
 
 def suggest_phases(sensors: list[dict[str, Any]]) -> list[dict[str, Any]]:
