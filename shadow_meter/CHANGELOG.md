@@ -4,6 +4,20 @@ All notable changes to this app are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this app uses
 [Semantic Versioning](https://semver.org/).
 
+## [0.3.2] - 2026-11-05
+
+### Added
+- **Find the phases automatically** (Settings, devices with their own meter): looks at 14 days of the
+  InfluxDB (or 7 days of the recorder) and assigns every smart plug to the phase that changes whenever
+  its device switches. Devices behind a UPS or on another circuit are recognised and left out. In a test
+  household 11 plugs were assigned, none wrongly; plugs whose devices did not switch stay unassigned
+  (they do not matter for the detection).
+
+### Changed
+- Settings explains that devices with their own meter should be assigned: if they are not, their
+  switching (heaters, kitchen appliances, printers, ...) is "detected" again as heating elements and
+  fridges. Until now the hint said they only make the results "a bit noisier", which was wrong.
+
 ## [0.3.1] - 2026-11-03
 
 ### Fixed

@@ -41,6 +41,12 @@ and energy (kWh, for the Energy dashboard).
    readers with L1-L3) and the power factor sensors that belong to them. Adding or removing a power factor
    sensor does not restart the analysis; it applies to the cycles from then on (use **Analyse the history
    again** to apply it to the history as well).
+5. Assign the **devices with their own meter** (smart plugs) to their phase - this matters: a heater or
+   a kitchen appliance on a plug that is not assigned is "detected" again as a heating element or a
+   fridge. **Find the phases automatically** does it for you from the history (14 days of the InfluxDB,
+   or 7 days of the recorder): for every switch of a plug it checks which phase changed by the same
+   amount. Plugs behind a UPS or on another circuit are recognised and left out; plugs whose devices did
+   not switch stay unassigned, which does not matter.
 
 The meters are chosen in the panel because the app configuration page of Home Assistant cannot show an
 entity picker. Changing the meters later restarts the analysis from the beginning; devices you

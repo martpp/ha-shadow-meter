@@ -132,6 +132,7 @@ h2 { font-size: 14px; margin: 0 0 8px; color: var(--text-2); text-transform: upp
 .sub-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
 .sub-row { display: grid; grid-template-columns: 1fr 140px; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
 .sub-row:last-child { border-bottom: 0; }
+.sub-row .finding { display: block; color: var(--text-2); font-size: 12px; }
 .sub-row small { display: block; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .error { margin: 0; color: var(--bad); font-size: 13px; }
 .setup-card .actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }

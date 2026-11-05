@@ -253,7 +253,7 @@ function updateCandidates(list) {
 }
 
 // ---- settings: choose the meters -----------------------------------------------------------------
-const setup = { sensors: [], phases: [], suggestion: [], pfSensors: [], pfSuggestion: {} };
+const setup = { sensors: [], phases: [], suggestion: [], pfSensors: [], pfSuggestion: {}, findings: {} };
 
 function sensorLabel(s) {
   const value = s.value == null ? "–" : `${fmtW(s.value)} W`;
@@ -321,6 +321,60 @@ function renderPhases() {
   $("use-pf").hidden = !setup.phases.some((p) => !p.power_factor && setup.pfSuggestion[p.mains]);
 }
 
+function findingText(f) {
+  if (f.verdict === "phase") {
+    const hits = Math.round((f.shares[f.phase] || 0) * f.steps);
+    return `Found: phase ${f.phase} (${hits} of ${f.steps} switch events showed up there)`;
+  }
+  if (f.verdict === "not_behind") return "Not behind the whole-home meter (its switching never shows up there): leave it out";
+  if (!f.steps) return "No switching seen in the history: it does not matter for the detection";
+  return `Unclear (${f.steps} switch events): leave it out or choose the phase yourself`;
+}
+
+async function findPhases() {
+  const phases = setup.phases.filter((p) => p.phase && p.mains).map((p) => ({ phase: p.phase, mains: p.mains }));
+  if (!phases.length) return showSetupError("Choose the power sensors of the phases first.");
+  showSetupError("");
+  $("find-phases").disabled = true;
+  try {
+    const started = await api("api/setup/find-phases", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phases }),
+    });
+    $("find-status").textContent = `Looking at ${started.days} days of history…`;
+    let job;
+    do {
+      await new Promise((r) => setTimeout(r, 2000));
+      job = await api("api/setup/find-phases");
+      if (job.state === "running") $("find-status").textContent = `Looking at the history: day ${job.done_days} of ${job.days}…`;
+    } while (job.state === "running");
+    if (job.state === "error") throw new Error(job.message);
+    setup.findings = job.results || {};
+    let assigned = 0;
+    for (const [eid, f] of Object.entries(setup.findings)) {
+      if (f.verdict !== "phase" || setup.phases.some((p) => p.submeters.includes(eid))) continue;
+      const target = setup.phases.find((p) => p.phase === f.phase);
+      if (target) {
+        target.submeters.push(eid);
+        assigned++;
+      }
+    }
+    const values = Object.values(setup.findings);
+    const outside = values.filter((f) => f.verdict === "not_behind").length;
+    $("find-status").textContent =
+      `Assigned ${assigned} device${assigned === 1 ? "" : "s"}` +
+      (outside ? `, ${outside} not behind the whole-home meter` : "") +
+      ". Check the list and save.";
+    renderSubs();
+  } catch (err) {
+    $("find-status").textContent = "";
+    showSetupError(`Could not find the phases: ${err.message.replace(/^\d+ /, "")}`);
+  } finally {
+    $("find-phases").disabled = false;
+  }
+}
+
 function renderSubs() {
   const box = $("setup-subs");
   const filter = $("sub-filter").value.trim().toLowerCase();
@@ -336,6 +390,13 @@ function renderSubs() {
     const id = document.createElement("small");
     id.textContent = s.entity_id;
     label.append(id);
+    const finding = setup.findings[s.entity_id];
+    if (finding) {
+      const note = document.createElement("span");
+      note.className = "finding";
+      note.textContent = findingText(finding);
+      label.append(note);
+    }
     const sel = document.createElement("select");
     sel.setAttribute("aria-label", `Phase of ${s.name}`);
     sel.add(new Option("not used", ""));
@@ -480,6 +541,7 @@ async function init() {
   $("setup-cancel").addEventListener("click", () => ($("setup").hidden = true));
   $("setup-save").addEventListener("click", saveSettings);
   $("reanalyse").addEventListener("click", () => askReanalyse(true));
+  $("find-phases").addEventListener("click", findPhases);
   $("reanalyse-no").addEventListener("click", () => askReanalyse(false));
   $("reanalyse-yes").addEventListener("click", reanalyse);
   $("add-phase").addEventListener("click", () => {

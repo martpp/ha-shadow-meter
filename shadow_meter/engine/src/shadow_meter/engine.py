@@ -13,13 +13,17 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import math
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
 import aiohttp
 
 from .analyzer import Analyzer
+from .models import Sample
 from .mqtt.discovery import Publisher
+from .phase_assign import PhaseFinder
 from .settings import Options, Setup
 from .sources import HistorySource
 from .sources.homeassistant import HomeAssistant, HomeAssistantError
@@ -28,6 +32,8 @@ from .store import Store
 
 _LOG = logging.getLogger(__name__)
 RETRY_MAX_S = 300.0
+DAY_S = 86400.0
+PowerHistory = Callable[[list[str], float, float], Awaitable[dict[str, list[Sample]]]]
 
 SETUP_STATUS = {
     "state": "setup",
@@ -48,6 +54,8 @@ class Engine:
         publisher: Publisher | None = None,
         mqtt_connected: Callable[[], bool] | None = None,
         list_states: Callable[[], Awaitable[list[dict[str, Any]]]] | None = None,
+        power_history: PowerHistory | None = None,
+        clock: Callable[[], float] = time.time,
     ) -> None:
         self.options = options
         self.store = store
@@ -56,6 +64,10 @@ class Engine:
         self.publisher = publisher
         self.mqtt_connected = mqtt_connected
         self._list_states = list_states
+        self._power_history = power_history
+        self._clock = clock
+        self._phase_task: asyncio.Task[None] | None = None
+        self.phase_job: dict[str, Any] = {"state": "idle"}
         self.analyzer: Analyzer | None = None
         self.setup: Setup | None = None
         self.source: str | None = None  # "ui" or "options"
@@ -97,6 +109,40 @@ class Engine:
         await self._reset("analysing the history again")
         await self._launch(self.setup)
 
+    # phases of devices with their own meter ---------------------------------------------------------
+    def find_phases(self, phases: dict[str, str], plugs: list[str], days: int) -> bool:
+        """Start finding the phase of every plug from the last `days` of history (in the background).
+
+        Returns False if a search is already running. Progress and results are in `phase_job`."""
+        if self._phase_task is not None and not self._phase_task.done():
+            return False
+        if self._power_history is None:
+            raise RuntimeError("no history source")
+        self.phase_job = {"state": "running", "days": days, "done_days": 0, "results": {}}
+        self._phase_task = asyncio.create_task(self._find_phases(phases, plugs, days, self._power_history))
+        return True
+
+    async def _find_phases(
+        self, phases: dict[str, str], plugs: list[str], days: int, history: PowerHistory
+    ) -> None:
+        finder = PhaseFinder(phases, plugs)
+        end = math.floor(self._clock() / 3600) * 3600
+        try:
+            for d in range(days, 0, -1):  # day by day: little memory, progress for the UI
+                start = end - d * DAY_S
+                samples = await history(finder.entities, start, start + DAY_S)
+                await asyncio.to_thread(finder.add, samples, start, start + DAY_S)
+                self.phase_job = {**self.phase_job, "done_days": days - d + 1}
+            self.phase_job = {"state": "done", "days": days, "done_days": days, "results": finder.results()}
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:  # history source unreachable etc.: tell the UI
+            _LOG.warning("finding the phases failed: %s", err)
+            self.phase_job = {
+                "state": "error",
+                "message": f"Could not read the history: {type(err).__name__}",
+            }
+
     async def states(self) -> list[dict[str, Any]]:
         """All entity states of Home Assistant (for the setup page)."""
         if self._list_states is not None:
@@ -122,6 +168,10 @@ class Engine:
         self._task = asyncio.create_task(self._run(self.analyzer))
 
     async def stop(self) -> None:
+        if self._phase_task and not self._phase_task.done():
+            self._phase_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._phase_task
         if self._task:
             self._task.cancel()
             with contextlib.suppress(asyncio.CancelledError):

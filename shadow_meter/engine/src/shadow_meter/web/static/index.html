@@ -42,7 +42,13 @@
       <button type="button" id="use-pf" hidden>Use suggested power factor sensors</button>
     </div>
     <h3>Devices with their own meter</h3>
-    <p class="hint">Optional. If you don't know the phase of a plug, leave it out - the results only get a bit noisier.</p>
+    <p class="hint">Important for good results: a device that already has its own meter (heater, kitchen
+      appliance, printer, ...) is otherwise "detected" again. If you don't know the phases, let Shadow Meter
+      find them from the history: it looks at which phase changes whenever a plug's device switches.</p>
+    <div class="row">
+      <button type="button" id="find-phases">Find the phases automatically</button>
+      <span class="hint" id="find-status" aria-live="polite"></span>
+    </div>
     <input type="search" id="sub-filter" placeholder="Filter sensors…" aria-label="Filter sensors">
     <div class="sub-list" id="setup-subs"></div>
     <p class="note">Saving restarts the analysis. If you change the meters of the phases, the analysis starts

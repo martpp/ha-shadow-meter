@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from . import __version__
 from .engine import Engine
+from .models import Sample
 from .mqtt.discovery import Publisher
 from .mqtt.link import MqttLink
 from .settings import Options, Runtime, load_options, load_runtime
@@ -79,6 +80,19 @@ async def run(options: Options, runtime: Runtime) -> None:
             finally:
                 await temp.close()
 
+        async def power_history(entity_ids: list[str], start: float, end: float) -> dict[str, list[Sample]]:
+            """Power history for the phase finder: InfluxDB if linked, else the recorder."""
+            if influx is not None:
+                return await influx.power(entity_ids, start, end)
+            if ha.connected:
+                return await ha.power(entity_ids, start, end)
+            temp = HomeAssistant(session, runtime.ha_url, runtime.ha_token.get_secret_value())
+            try:
+                await temp.connect()
+                return await temp.power(entity_ids, start, end)
+            finally:
+                await temp.close()
+
         engine = Engine(
             options,
             store,
@@ -87,6 +101,7 @@ async def run(options: Options, runtime: Runtime) -> None:
             publisher=publisher,
             mqtt_connected=(lambda: link.connected) if link else None,
             list_states=list_states,
+            power_history=power_history,
         )
         if not link:
             _LOG.warning("no MQTT broker configured: devices cannot be added to Home Assistant")

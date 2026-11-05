@@ -162,6 +162,8 @@ def build_app(engine: Engine, runtime: Runtime) -> web.Application:
     app.router.add_get("/api/setup", get_setup)
     app.router.add_put("/api/setup", put_setup)
     app.router.add_post("/api/reanalyse", reanalyse)
+    app.router.add_post("/api/setup/find-phases", start_find_phases)
+    app.router.add_get("/api/setup/find-phases", find_phases_status)
     app.router.add_get("/api/events", events)
     return app
 
@@ -215,6 +217,40 @@ async def put_setup(request: web.Request) -> web.Response:
         raise web.HTTPBadRequest(text=f"not a power factor sensor in Home Assistant: {', '.join(unknown)}")
     reset = await engine.reconfigure(setup)
     return web.json_response({"ok": True, "reset": reset})
+
+
+async def start_find_phases(request: web.Request) -> web.Response:
+    """Find the phase of every other power sensor (devices with their own meter) from the history.
+
+    Body: {"phases": [{"phase": "A", "mains": "sensor..."}, ...]}. Runs in the background; poll with GET.
+    Uses 14 days of an InfluxDB, else 7 days of the recorder."""
+    engine = request.app[ENGINE]
+    if request.content_type != "application/json":
+        raise web.HTTPUnsupportedMediaType()
+    try:
+        body = await request.json()
+        setup = Setup.model_validate(
+            {"phases": [{"phase": p["phase"], "mains": p["mains"]} for p in body["phases"]]}
+        )
+    except (json.JSONDecodeError, KeyError, TypeError) as err:
+        raise web.HTTPBadRequest(text="invalid request") from err
+    except ValidationError as err:
+        reasons = "; ".join(e["msg"].removeprefix("Value error, ") for e in err.errors())
+        raise web.HTTPBadRequest(text=reasons) from err
+    sensors = [s["entity_id"] for s in power_sensors(await engine.states())]
+    mains = {p.phase: p.mains for p in setup.phases}
+    unknown = sorted(set(mains.values()) - set(sensors))
+    if unknown:
+        raise web.HTTPBadRequest(text=f"not a power sensor in Home Assistant: {', '.join(unknown)}")
+    plugs = [e for e in sensors if e not in mains.values()]
+    days = 14 if engine.influx is not None else 7
+    if not engine.find_phases(mains, plugs, days):
+        raise web.HTTPConflict(text="Already searching, please wait")
+    return web.json_response({"ok": True, "days": days, "plugs": len(plugs)})
+
+
+async def find_phases_status(request: web.Request) -> web.Response:
+    return web.json_response(request.app[ENGINE].phase_job, dumps=_dumps)
 
 
 async def reanalyse(request: web.Request) -> web.Response:
